@@ -1,0 +1,178 @@
+{
+    "_id": "example.org",
+    "axfr_enabled": true,
+    "axfr_enabled_set": 1234567899,
+    "axfr_hosts": [
+        "127.0.0.1"
+    ],
+    "dnsxd_couch_rec": "dnsxd_couch_lz",
+    "enabled": true,
+    "enabled_set": 1234567899,
+    "export": true,
+    "export_set": 1234567899,
+    "history": [],
+    "rr": [
+        {
+            "class": 1,
+            "data": {
+                "dname": "ns1.example.org",
+                "dnsxd_couch_rec": "dns_rrdata_ns"
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "nu3b1dt0iaqgbiu9etajsvgam6trsmp7",
+            "incept": 1234567899,
+            "name": "example.org",
+            "ttl": 3600,
+            "type": 2
+        },
+        {
+            "class": 1,
+            "data": {
+                "dnsxd_couch_rec": "dns_rrdata_a",
+                "ip": "127.0.0.1"
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "qa7cishb2d7b2ed2icn3f2mv0k5svvs1",
+            "incept": 1234567899,
+            "name": "ns1.example.org",
+            "set": 1234567899,
+            "tombstone": null,
+            "ttl": 3600,
+            "type": 1
+        },
+        {
+            "class": 1,
+            "data": {
+                "dname": "example.org",
+                "dnsxd_couch_rec": "dns_rrdata_ptr"
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "hi998kf9jq9ffdlakc0p6g171vtlc05m",
+            "incept": 1234567899,
+            "name": "b._dns-sd._udp.example.org",
+            "set": 1234567899,
+            "tombstone": null,
+            "ttl": 3600,
+            "type": 12
+        },
+        {
+            "class": 1,
+            "data": {
+                "dname": "example.org",
+                "dnsxd_couch_rec": "dns_rrdata_ptr"
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "jcuhsctf3ahd3ofg6pciclc7nfsln250",
+            "incept": 1234567899,
+            "name": "r._dns-sd._udp.example.org",
+            "set": 1234567899,
+            "tombstone": null,
+            "ttl": 3600,
+            "type": 12
+        },
+        {
+            "class": 1,
+            "data": {
+                "dnsxd_couch_rec": "dns_rrdata_srv",
+                "port": 5352,
+                "priority": 0,
+                "target": "ns1.example.org",
+                "weight": 0
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "cc7ipl9s6dmlksn7jbiqf82sqbl87j9f",
+            "incept": 1234567899,
+            "name": "_dns-update._tcp.example.org",
+            "set": 1234567899,
+            "tombstone": null,
+            "ttl": 3600,
+            "type": 33
+        },
+        {
+            "class": 1,
+            "data": {
+                "dnsxd_couch_rec": "dns_rrdata_srv",
+                "port": 5352,
+                "priority": 0,
+                "target": "ns1.example.org",
+                "weight": 0
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "0r6hst36thua80fk78n933kp85kr382q",
+            "incept": 1234567899,
+            "name": "_dns-update._udp.example.org",
+            "set": 1234567899,
+            "tombstone": null,
+            "ttl": 3600,
+            "type": 33
+        },
+        {
+            "class": 1,
+            "data": {
+                "dnsxd_couch_rec": "dns_rrdata_srv",
+                "port": 5352,
+                "priority": 0,
+                "target": "ns1.example.org",
+                "weight": 0
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "65gn7c94tki1nqi2g7s7nisi6sefl7s1",
+            "incept": 1234567899,
+            "name": "_dns-llq._tcp.example.org",
+            "set": 1234567899,
+            "tombstone": null,
+            "ttl": 3600,
+            "type": 33
+        },
+        {
+            "class": 1,
+            "data": {
+                "dnsxd_couch_rec": "dns_rrdata_srv",
+                "port": 5352,
+                "priority": 0,
+                "target": "ns1.example.org",
+                "weight": 0
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_rr",
+            "expire": null,
+            "id": "6bhb16vgb293g521afujbo9pufvnj48l",
+            "incept": 1234567899,
+            "name": "_dns-llq._udp.example.org",
+            "set": 1234567899,
+            "tombstone": null,
+            "ttl": 3600,
+            "type": 33
+        }
+    ],
+    "soa_param": {
+        "dnsxd_couch_rec": "dnsxd_couch_sp",
+        "expire": 7200,
+        "minimum": 120,
+        "mname": "ns1.example.org",
+        "refresh": 3600,
+        "retry": 3600,
+        "rname": "hostmaster.example.org",
+        "set": 1234567899
+    },
+    "soa_param_set": 1234567899,
+    "tsig_keys": [
+        {
+            "created": 1234567899,
+            "dnssd_only": false,
+            "dnsxd_couch_rec": "dnsxd_couch_tk",
+            "enabled": true,
+            "id": "g22s95fovk6u49q25dltferlm4t2l7np",
+            "name": "client",
+            "secret": "Vwup0eHvigTClDwWbdX7rjM+r/k=",
+            "set": 1234567899,
+            "tombstone": "undefined"
+        }
+    ]
+}
