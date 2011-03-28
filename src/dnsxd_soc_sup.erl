@@ -73,8 +73,7 @@ build_interfaces() ->
 	    {error, no_interfaces}
     end.
 
-build_interfaces(Interfaces)
-  when is_list(Interfaces) andalso length(Interfaces) > 0 ->
+build_interfaces([_|_] = Interfaces) ->
     try lists:map(fun build_if_spec/1, Interfaces)
     catch throw:{Reason, Term} -> {error, {Reason, Term}} end;
 build_interfaces(Term) ->
