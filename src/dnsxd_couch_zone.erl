@@ -337,19 +337,16 @@ update_rr(Key, Private, [{add, Name, Type, TTL, Data, LeaseLength}|Updates],
 	    update_rr(Key, Private, Updates, NewRRs)
     end.
 
-reap(Now, RRs) ->
+reap(Now, RRs) when is_list(RRs) ->
     %% todo: should be configurable
     TombstonePeriod = 48 * 60 * 60,
-    TombstonedRRs = lists:map(
-		      fun(#dnsxd_couch_rr{expire = Expires} = RR)
-			    when is_integer(Expires) andalso Expires < Now ->
-			      Tombstone = Expires + TombstonePeriod,
-			       RR#dnsxd_couch_rr{tombstone = Tombstone};
-			 (#dnsxd_couch_rr{} = RR) -> RR
-		      end, RRs),
-    lists:filter(fun(#dnsxd_couch_rr{tombstone = Tombstone})
-		       when is_integer(Tombstone) andalso Tombstone < Now ->
-			 false;
-		    (#dnsxd_couch_rr{}) ->
-			 true
-		 end, TombstonedRRs).
+    TombstonedRRs = [fun(#dnsxd_couch_rr{expire = Expires} = RR)
+			   when is_integer(Expires) andalso Expires < Now ->
+			     Tombstone = Expires + TombstonePeriod,
+			     RR#dnsxd_couch_rr{tombstone = Tombstone};
+			(#dnsxd_couch_rr{} = RR) -> RR
+		     end(CouchRR) || CouchRR <- RRs],
+    [RR || RR <- TombstonedRRs, reap(Now, RR)];
+reap(Now, #dnsxd_couch_rr{tombstone = Tombstone})
+  when is_integer(Tombstone) andalso Tombstone < Now -> false;
+reap(_Now, #dnsxd_couch_rr{}) -> true.
