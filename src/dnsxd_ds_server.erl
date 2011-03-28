@@ -117,7 +117,7 @@ msg_llq(MsgCtx, #dns_message{
     case ets:lookup(?TAB_LLQ, Id) of
 	[#llq_ref{id = Id, pid = Pid}] when is_pid(Pid) ->
 	    dnsxd_llq_server:handle_msg(Pid, MsgCtx, Msg);
-	[] -> undefined
+	[] -> {error, nosuchllq}
     end.
 
 %%%===================================================================
