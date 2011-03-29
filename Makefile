@@ -1,9 +1,12 @@
-.PHONY: all compile deps doc clean test
+.PHONY: all compile rel deps doc clean test
 
-all: deps compile
+all: rel
 
 compile:
 	@./rebar compile
+
+rel:
+	@./rebar compile generate
 
 deps:
 	@./rebar get-deps
@@ -13,6 +16,7 @@ doc:
 
 clean:
 	@./rebar clean
+	@rm -rf rel/dnsxd
 
 test: all
 	@./rebar eunit skip_deps=true

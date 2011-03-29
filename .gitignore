@@ -4,3 +4,4 @@ doc/
 deps/
 ebin/
 .eunit/
+rel/dnsxd
