@@ -1,6 +1,6 @@
 .PHONY: all compile rel deps doc clean test
 
-all: rel
+all: deps rel
 
 compile:
 	@./rebar compile
