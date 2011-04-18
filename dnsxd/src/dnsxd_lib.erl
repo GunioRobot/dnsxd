@@ -23,7 +23,7 @@
 %% API
 -export([ensure_apps_started/1, new_id/0,
 	 active_rr_fun/0, active_rr_fun/1, active_rr/2,
-	 to_dns_rr/1, to_dns_rr/2, is_dnssd_rr/2, unique/1]).
+	 to_dns_rr/1, to_dns_rr/2, is_dnssd_rr/2]).
 
 %%%===================================================================
 %%% API
@@ -138,8 +138,6 @@ is_dnssd_rr(ZoneName, Name, Type)
     ZoneNameLabels = dns:dname_to_labels(ZoneName),
     is_dnssd_rr(ZoneNameLabels, Name, Type);
 is_dnssd_rr(_ZoneName, _Name, _Type) -> false.
-
-unique(List) -> sets:to_list(sets:from_list(List)).
 
 %%%===================================================================
 %%% Internal functions

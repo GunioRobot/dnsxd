@@ -132,12 +132,12 @@ ad(#ctx{} = Ctx, An, Au, Ad) ->
     AnTargets = lists:foldl(Fun, [], An),
     AuTargets = lists:foldl(Fun, [], Au),
     AdTargets = lists:foldl(Fun, [], Ad),
-    Targets = dnsxd_lib:unique(AnTargets ++ AuTargets ++ AdTargets),
+    Targets = lists:usort(AnTargets ++ AuTargets ++ AdTargets),
     Matches = lists:filter(fun(#dnsxd_rr{name = Name, type = Type}) ->
 				   Hash = erlang:phash2({Name,Type}),
 				   lists:member(Hash, Targets)
 			   end, Ctx#ctx.rr),
-    NewAd = dnsxd_lib:unique(Matches ++ Ad),
+    NewAd = lists:usort(Matches ++ Ad),
     case NewAd of
 	Ad -> {noerror, An, Au, Ad};
 	NewAd -> ad(Ctx, An, Au, NewAd)
@@ -195,7 +195,7 @@ match_cname(#ctx{}, _) -> false.
 
 build_names(ZoneName, RRs) -> build_names(ZoneName, [ZoneName], RRs).
 
-build_names(_ZoneName, Names, []) -> dnsxd_lib:unique(Names);
+build_names(_ZoneName, Names, []) -> lists:usort(Names);
 build_names(ZoneName, Names, [#dnsxd_rr{name = Name}|RRs]) ->
     Labels = dns:dname_to_labels(Name),
     AscNames = build_asc_names(ZoneName, Labels),
@@ -215,7 +215,7 @@ join_labels(Labels) ->
 
 build_cuts(ZoneName, RRs) -> build_cuts(ZoneName, RRs, []).
 
-build_cuts(_ZoneName, [], Cuts) -> dnsxd_lib:unique(Cuts);
+build_cuts(_ZoneName, [], Cuts) -> lists:usort(Cuts);
 build_cuts(ZoneName, [#dnsxd_rr{name = ZoneName}|RRs], Cuts) ->
     build_cuts(ZoneName, RRs, Cuts);
 build_cuts(ZoneName, [#dnsxd_rr{type = ?DNS_TYPE_NS, name = Name}|RRs], Cuts) ->

@@ -190,7 +190,7 @@ merge_soa_param(#dnsxd_couch_lz{} = Winner, #dnsxd_couch_lz{}) -> Winner.
 %% rr
 merge_rr(#dnsxd_couch_lz{rr = WRRs} = Winner, #dnsxd_couch_lz{rr = LRRs}) ->
     %% todo: check for invalid rrsets (multiple cname at same dname, etc)
-    CombinedRRs = dnsxd_lib:unique(WRRs ++ LRRs),
+    CombinedRRs = lists:usort(WRRs ++ LRRs),
     NewRRs = dedupe_tuples(#dnsxd_couch_rr.id,
 			   #dnsxd_couch_rr.set,
 			   CombinedRRs),
@@ -206,7 +206,7 @@ merge_axfr_hosts(#dnsxd_couch_lz{axfr_hosts = HW} = Winner,
 %% tsig_keys
 merge_tsig_keys(#dnsxd_couch_lz{tsig_keys = WKeys} = Winner,
 	  #dnsxd_couch_lz{tsig_keys = LKeys}) ->
-    CombinedKeys = dnsxd_lib:unique(WKeys ++ LKeys),
+    CombinedKeys = lists:usort(WKeys ++ LKeys),
     NewKeys = dedupe_tuples(#dnsxd_couch_tk.id,
 			    #dnsxd_couch_tk.set,
 			    CombinedKeys),
@@ -215,7 +215,7 @@ merge_tsig_keys(#dnsxd_couch_lz{tsig_keys = WKeys} = Winner,
 %% history
 merge_history(#dnsxd_couch_lz{history = WHistory} = Winner,
 	#dnsxd_couch_lz{history = LHistory}) ->
-    Combined = dnsxd_lib:unique(WHistory ++ LHistory),
+    Combined = lists:usort(WHistory ++ LHistory),
     %% todo: add merge note
     Winner#dnsxd_couch_lz{history = Combined}.
 
