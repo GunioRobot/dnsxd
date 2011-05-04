@@ -31,13 +31,17 @@ handle(MsgCtx, #dns_message{qc = 1,
 			    questions = [#dns_query{name = QName} = Q]
 			   } = ReqMsg) ->
     case dnsxd:find_zone(QName) of
-	#dnsxd_zone{} = Zone ->
-	    {RC, An, Au, Ad} = dnsxd_query:answer(Zone, Q),
-	    Props = [{rc, RC}, {dnssec, false}, aa,
-		     {an, [ dnsxd_lib:to_dns_rr(RR) || RR <- An ]},
-		     {au, [ dnsxd_lib:to_dns_rr(RR) || RR <- Au ]},
-		     {ad, [ dnsxd_lib:to_dns_rr(RR) || RR <- Ad ]}],
+	#dnsxd_zone{dnssec_enabled = ZoneDNSSEC} = Zone ->
+	    ClientDNSSEC = do_dnssec(ReqMsg),
+	    DNSSEC = ClientDNSSEC andalso ZoneDNSSEC,
+	    {RC, An, Au, Ad} = dnsxd_query:answer(Zone, Q, DNSSEC),
+	    Props = [{rc, RC}, {dnssec, DNSSEC}, aa,
+		     {an, An}, {au, Au}, {ad, Ad}],
 	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props);
 	_ ->
 	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}])
     end.
+
+do_dnssec(#dns_message{additional=[#dns_optrr{dnssec = DNSSEC}|_]}) ->
+    DNSSEC;
+do_dnssec(#dns_message{}) -> false.

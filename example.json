@@ -3,9 +3,50 @@
     "axfr_enabled": true,
     "axfr_enabled_set": 1234567899,
     "axfr_hosts": [
-        "127.0.0.1"
+        "::FFFF:127.0.0.1"
     ],
-    "dnsxd_couch_rec": "dnsxd_couch_lz",
+    "dnssec_enabled": true,
+    "dnssec_enabled_set": 1234567899,
+    "dnssec_keys": [
+        {
+            "alg": 7,
+            "data": {
+                "d": "HcnDIbepKHM1lcuQa3kquP1jK5/ZkEibT4nB6eeA4TjoyckWmOIGr1bB/yOeeHDrVfg6PJn/LnJmo5nrgN/dSPoLyY0mbyw1Zdx7xkXe5XYlh9aK6oVu4BYiAWTQEWX87QIvoD3uUIUi56eezQfwH3PhqU8bUYl5d8WF6f/9pX9COqF7/jmJqkNtej9m5rHTM1U0X+/2pRyP3aeWSGZcOECP2L+n2ssm5YPthGjeDYrRs9+SIS9HSqgdTOi70not9s5e7KWuN1r/nsRvJpZWm3YmpSkz78jLWe/yeKT6cCp7dxa+4Q+hk1DXE98DyDHfZf/kGwlL/WqhSHzxhIBh3Q==",
+                "dnsxd_couch_rec": "dnsxd_couch_dk_rsa",
+                "e": "AQAB",
+                "n": "lv7t304rccLHF/YkxSootnutQRCOkN0LTxWXaEcFGmPLYlisimC8hv0JXRMFP5ExOMJdg55CvH3zzY89D33BfKFtqq26lgVbf88+fEK2CDfROyU4UFFJ59LlelLVnIYOMmT0i0SAMnDPwxCK2ohKHu2qw0mID8bgNJHsTxTDf+Aefnkzaq3Y2GuXi86z5Uu7qltjXejMSFsTgGC0bd91PLz3gAPhImK8HBEhVdYeKHz9cEGY9WrZBUrxSw0aD10UKS/6kNbTWwNUu/m4yCq7SuKATWhw6MlxXZKFIEi2JmwRoXE7wChkNwcxpesIaw4N7oe7/E0JvyMKlVI3Uv+E/Q=="
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_dk",
+            "expire": 1550137159,
+            "id": "o1c2k06tc9kh3naoq6mmhtdebbhd71c2",
+            "incept": 1234567899,
+            "ksk": true,
+            "set": 1234567899
+        },
+        {
+            "alg": 7,
+            "data": {
+                "d": "dR6LJFtGGh8S5O42iGlSC3CiqQw1faNjzIYhwVgJXEGD66i4om2DedAeNa3C9tlu/0rW84rxDABtkKrr8H/dB8FLUWE1oRYo2Dslx5OW8PIPEUMkUaClyR3WL7AhtjFDoWjODSyF8m7G4s1E7zK0LtPU8lx5Czxw44VT4g20F4E=",
+                "dnsxd_couch_rec": "dnsxd_couch_dk_rsa",
+                "e": "AQAB",
+                "n": "nJT8G9u0/ksPoBTdoTP3ACkEVTkVS8VENBu7cCorQ3eNF+ae8XjgTqWHKfzUApJMYCSMHiyaHeEs5ak1I8L9b0mjAlaMIAIkP99EGz8+eERugu8WMRLOWhXjXGA1F96lEhWfh8cWkIIvTBmLG6+N510sE1ifWeUPgjJfDjcAOWU="
+            },
+            "dnsxd_couch_rec": "dnsxd_couch_dk",
+            "expire": 1266124825,
+            "id": "o1c2k06tc9kh3naoq6mmhtdebbhd71c2",
+            "incept": 1234567899,
+            "ksk": false,
+            "set": 1234567899
+        }
+    ],
+    "dnssec_nsec3_param": {
+        "alg": 1,
+        "dnsxd_couch_rec": "dnsxd_couch_nsec3param",
+        "iter": 10,
+        "salt": "salt"
+    },
+    "dnssec_nsec3_param_set": 1234567899,
+    "dnsxd_couch_rec": "dnsxd_couch_zone",
     "enabled": true,
     "enabled_set": 1234567899,
     "export": true,

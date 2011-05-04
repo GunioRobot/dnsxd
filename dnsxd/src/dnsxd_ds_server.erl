@@ -22,7 +22,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/0, ets_memory/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -100,9 +100,9 @@ get_key(KeyName) ->
     [KeyLabel|ZoneLabels] = dns:dname_to_labels(dns:dname_to_lower(KeyName)),
     ZoneName = join_labels(ZoneLabels),
     case ets:lookup(?TAB_CAT, ZoneName) of
-	[#dnsxd_zone{keys = Keys}] ->
-	    case lists:keyfind(KeyLabel, #dnsxd_key.name, Keys) of
-		#dnsxd_key{} = Key -> {ZoneName, Key};
+	[#dnsxd_zone{tsig_keys = Keys}] ->
+	    case lists:keyfind(KeyLabel, #dnsxd_tsig_key.name, Keys) of
+		#dnsxd_tsig_key{} = Key -> {ZoneName, Key};
 		false -> undefined
 	    end;
 	[] -> undefined
@@ -119,6 +119,16 @@ msg_llq(MsgCtx, #dns_message{
 	    dnsxd_llq_server:handle_msg(Pid, MsgCtx, Msg);
 	[] -> {error, nosuchllq}
     end.
+
+ets_memory() ->
+    Tabs = [?TAB_INDEX, ?TAB_CAT, ?TAB_SW, ?TAB_LLQ],
+    WordSize = erlang:system_info(wordsize),
+    Fun = fun(Tab, Acc) ->
+		  TabSize = ets:info(Tab, memory) * WordSize,
+		  {{Tab, TabSize}, TabSize + Acc}
+	  end,
+    {TabSizes, Total} = lists:mapfoldl(Fun, 0, Tabs),
+    [{total, Total}|TabSizes].
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -152,8 +162,9 @@ handle_call({delete_zone, ZoneName}, _From, State) ->
 	    end,
     {reply, Reply, State};
 handle_call({new_llq, Pid, MsgCtx,
-	     #dns_message{questions = [#dns_query{name = NameM} = Q]} = Msg},
-	    _From, #state{llq_count = Count} = State) ->
+	     #dns_message{questions = [#dns_query{name = NameM} = Q],
+			  additional = [#dns_optrr{dnssec = ClientDNSSEC}|_]
+			 } = Msg}, _From, #state{llq_count = Count} = State) ->
     Name = dns:dname_to_lower(NameM),
     {ok, Opts} = dnsxd:llq_opts(),
     MaxLLQ = proplists:get_value(max_llq, Opts, 500),
@@ -162,10 +173,12 @@ handle_call({new_llq, Pid, MsgCtx,
 		    {ok, servfull};
 		false ->
 		    case find_zone(Name) of
-			#dnsxd_zone{name = ZoneName} ->
+			#dnsxd_zone{name = ZoneName} = Zone ->
 			    Id = new_llqid(),
+			    DNSSEC = ClientDNSSEC andalso
+				Zone#dnsxd_zone.dnssec_enabled,
 			    {ok, LLQPid} = dnsxd_llq_server:start_link(
-					  Pid, Id, ZoneName, MsgCtx, Q),
+					  Pid, Id, ZoneName, MsgCtx, Q, DNSSEC),
 			    LLQRef = #llq_ref{id = Id, pid = LLQPid,
 					      zonename = ZoneName},
 			    ets:insert(?TAB_LLQ, LLQRef),
@@ -221,7 +234,7 @@ zone_loaded(ZoneName) ->
 
 insert_zone(#dnsxd_zone{name = ZoneName} = Zone) ->
     AlreadyLoaded = zone_loaded(ZoneName),
-    true = ets:insert(?TAB_CAT, Zone),
+    true = ets:insert(?TAB_CAT, dnsxd_zone:prepare(Zone)),
     case AlreadyLoaded of
 	true -> ok;
 	false -> ok = add_to_index(ZoneName)

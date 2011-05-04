@@ -7,9 +7,7 @@
   {modules, []},
   {registered, []},
   {applications, [kernel, stdlib, sasl, crypto, dns]},
-  {env, [{interfaces, [{"::", 53, udp},
-		       {"::", 53, tcp},
-		       {"::", 5352, udp},
+  {env, [{interfaces, [{"::", 5352, udp},
 		       {"::", 5352, tcp}]},
 	 {udp_payload_size, 1440},
 	 {tcp_timeout, 60},
@@ -26,10 +24,7 @@
 			   {port, 5984},
 			   {prefix, ""},
 			   {options, [{basic_auth, {"username", "password"}}]},
-			   {databases, [{local, "dnsxd_local"},
-					{import, "dnsxd_import"},
-					{export, "dnsxd_export"}
-				       ]},
+			   {database, "dnsxd_zones"},
 			   {init_timeout, 60000}
 			  ]}
 	]}

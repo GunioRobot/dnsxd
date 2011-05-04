@@ -83,26 +83,29 @@ set_env(Key, Value) -> application:set_env(dnsxd, Key, Value).
 datastore() ->
     case get_env(datastore_mod) of
 	{ok, Datastore} when is_atom(Datastore) -> Datastore;
-	{ok, Datastore} ->
-	    {error, {not_atom, Datastore}};
-	undefined ->
-	    {error, undefined}
+	_ -> throw({bad_config, datastore_mod})
     end.
 
 llq_opts() ->
     case dnsxd:get_env(llq_opts) of
-	{ok, List} = Opts when is_list(List) -> Opts;
-	undefined -> {ok, []}
+	{ok, List} when is_list(List) -> List;
+	undefined -> {ok, []};
+	_ -> throw({bad_config, llq_opts})
     end.
 
 update_opts() ->
     case dnsxd:get_env(update_opts) of
-	{ok, List} = Opts when is_list(List) -> Opts;
-	undefined -> {ok, []}
+	{ok, List} when is_list(List) -> List;
+	undefined -> [];
+	_ -> throw({bad_config, update_opts})
     end.
 
 datastore_opts() ->
-    dnsxd:get_env(datastore_opts).
+    case dnsxd:get_env(datastore_opts) of
+	{ok, List} when is_list(List) -> List;
+	undefined -> [];
+	_ -> throw({bad_config, datastore_opts})
+    end.
 
 zone_loaded(ZoneName) ->
     dnsxd_ds_server:zone_loaded(ZoneName).

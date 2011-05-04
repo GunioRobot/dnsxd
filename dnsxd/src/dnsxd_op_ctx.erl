@@ -125,7 +125,7 @@ to_wire(MsgCtx, #dns_message{id = MsgId, additional = Additional} = RespMsg0) ->
 		     undefined ->
 			 dns:encode_message(RespMsg)
 		 end,
-    if MaxSize =:= undefined ->
+    if MaxSize =:= 0 orelse MaxSize =:= undefined ->
 	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin);
        MaxSize >= byte_size(RespMsgBin) ->
 	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin);
@@ -144,9 +144,9 @@ reply(MsgCtx,
 		   {value, {ad, Additional}, Props0}
 		     when is_list(Additional) ->
 		       NewAdditional = [NewOptRR|Additional],
-		       [NewAdditional|Props0];
+		       [{ad, NewAdditional}|Props0];
 		   false ->
-		       [NewOptRR]
+		       [{ad, [NewOptRR]}|Props]
 	       end,
     reply_body(MsgCtx, Msg, NewProps);
 reply(MsgCtx, #dns_message{} = Msg, Props) ->

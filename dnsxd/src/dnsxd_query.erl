@@ -21,34 +21,68 @@
 -include("dnsxd.hrl").
 
 %% API
--export([answer/2, answer/3]).
+-export([answer/3, answer/4]).
 
--record(ctx, {now, rr, zonename, names, cuts, followed_names = []}).
+-record(ctx, {now, rr, zonename, names, cuts, followed_names = [],
+	      soa, dnssec, dnssec_keys, nsec3, cur_serial, next_serial}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-answer(#dnsxd_zone{} = Zone, #dns_query{} = Query) ->
+answer(#dnsxd_zone{} = Zone, #dns_query{} = Query, DNSSEC)
+  when is_boolean(DNSSEC) ->
     Now = dns:unix_time(),
-    answer(Zone, Query, Now).
+    answer(Zone, Query, DNSSEC, Now).
 
-answer(#dnsxd_zone{name = ZoneName, rr = RR}, #dns_query{} = Query, Now)
-  when is_integer(Now) ->
+answer(#dnsxd_zone{name = ZoneName, rr = RR, soa_param = SOA,
+		   dnssec_keys = AllKeys, dnssec_enabled = DNSSECEnabled,
+		   nsec3 = NSEC3Param, serials = Serials},
+       #dns_query{} = Query, DoDNSSEC, Now) when is_integer(Now) ->
+    ActiveKeys = [ Key || #dnsxd_dnssec_key{} = Key <- AllKeys,
+			  is_record(NSEC3Param, dnsxd_nsec3_param),
+			  DNSSECEnabled andalso DoDNSSEC,
+			  Key#dnsxd_dnssec_key.alg =:= ?DNS_ALG_NSEC3RSASHA1,
+			  Key#dnsxd_dnssec_key.incept =< Now,
+			  Key#dnsxd_dnssec_key.expire > Now ],
     FilterFun = dnsxd_lib:active_rr_fun(Now),
     ActiveRR = lists:filter(FilterFun, RR),
     Names = build_names(ZoneName, ActiveRR),
     Cuts = build_cuts(ZoneName, ActiveRR),
+    NSEC3 = case ActiveKeys =:= [] of
+		true -> undefined;
+		false -> NSEC3Param
+	    end,
+    {CurSerial, NextSerial} = current_serials(Now, Serials),
     Ctx = #ctx{zonename = ZoneName,
 	       names = Names,
 	       now = Now,
 	       rr = ActiveRR,
-	       cuts = Cuts},
-    an(Query, Ctx, []).
+	       cuts = Cuts,
+	       soa = SOA,
+	       dnssec = DoDNSSEC,
+	       dnssec_keys = ActiveKeys,
+	       nsec3 = NSEC3,
+	       cur_serial = CurSerial,
+	       next_serial = NextSerial},
+    {RCODE, An, Au, Ad} = an(Query, Ctx, []),
+    {RCODE,
+     dnsxd_lib:to_dns_rr(Now, An),
+     dnsxd_lib:to_dns_rr(Now, Au),
+     dnsxd_lib:to_dns_rr(Now, Ad)}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+current_serials(Now, [Current, Next|_])
+  when Now >= Current andalso Now < Next ->
+    {Current, Next};
+current_serials(Now, [_|Serials]) ->
+    current_serials(Now, Serials);
+current_serials(_Now, _Serials) ->
+    %% this should never happen...
+    {0, 0}.
 
 an(#dns_query{name = NameM, type = Type} = Query,
    #ctx{zonename = ZoneName} = Ctx, An) ->
@@ -62,7 +96,10 @@ an(#dns_query{name = NameM, type = Type} = Query,
 			  match_qtype(Ctx, Type, RR) ],
 	    NewAn = An ++ NewRRs,
 	    case NewAn of
-		[] -> {noerror, [], [SOA], []};
+		[] ->
+		    %% no data
+		    FinalAn = sign(Ctx, add_nsec3(false, Ctx, Query, [SOA])),
+		    {noerror, [], FinalAn, []};
 		_ -> ad(Ctx, NewAn, [])
 	    end;
 	_ ->
@@ -92,13 +129,25 @@ an(#dns_query{name = NameM, type = Type} = Query,
 				       || #dnsxd_rr{} = RR <- MatchRRs,
 					  match_qtype(Ctx, Type, RR) ],
 			    NewAn = An ++ NewRRs,
-			    au(Ctx, NewAn)
+			    case NewAn of
+				[] ->
+				    FinalAn = sign(Ctx,
+						   add_nsec3(false, Ctx, Query,
+							     [SOA])),
+				    {noerror, [], FinalAn, []};
+				_ ->
+				    au(Ctx, NewAn)
+			    end
 		    end;
 		{referral, RefRRs} ->
 		    ad(Ctx, An, RefRRs);
 		nomatch ->
 		    case An of
-			[] -> {nxdomain, [], [SOA], []};
+			[] ->
+			    %% no name
+			    FinalAn = sign(Ctx,
+					   add_nsec3(true, Ctx, Query, [SOA])),
+			    {nxdomain, [], FinalAn, []};
 			_ -> au(Ctx, An)
 		    end
 	    end
@@ -139,15 +188,136 @@ ad(#ctx{} = Ctx, An, Au, Ad) ->
 			   end, Ctx#ctx.rr),
     NewAd = lists:usort(Matches ++ Ad),
     case NewAd of
-	Ad -> {noerror, An, Au, Ad};
+	Ad -> {noerror, sign(Ctx, An), sign(Ctx, Au), sign(Ctx, Ad)};
 	NewAd -> ad(Ctx, An, Au, NewAd)
     end.
+
+sign(#ctx{dnssec = true, dnssec_keys = Keys} = Ctx, RR) when Keys =/= [] ->
+    sign(Ctx, lists:reverse(RR), [], []);
+sign(#ctx{}, RR) -> RR.
+
+sign(#ctx{}, [], [], Processed) ->
+    Processed;
+sign(#ctx{} = Ctx, [], Set, Processed) ->
+    SignedRRSet = sign_rrset(Ctx, Set),
+    SignedRRSet ++ Processed;
+sign(#ctx{} = Ctx, [#dnsxd_rr{} = RR|RRs], _RRSet = [], Processed) ->
+    sign(Ctx, RRs, [RR], Processed);
+sign(#ctx{} = Ctx, [#dnsxd_rr{name = N, class = C, type = T} = RR|RRs],
+     [#dnsxd_rr{name = N, class = C, type = T}|_] = RRSet, Processed) ->
+    sign(Ctx, RRs, [RR|RRSet], Processed);
+sign(#ctx{} = Ctx, RRs, RRSet, Processed) ->
+    SignedRRSet = sign_rrset(Ctx, RRSet),
+    NewProcessed = SignedRRSet ++ Processed,
+    sign(Ctx, RRs, [], NewProcessed).
+
+sign_rrset(#ctx{dnssec_keys = Keys, zonename = SignersName}, Set) ->
+    RRs = [#dns_rr{name = N, class = C, type = Type, ttl = TTL, data = D}
+	   || #dnsxd_rr{name = N, class = C, type = Type, ttl = TTL, data = D}
+		  <- Set ],
+    UseKSK = (hd(Set))#dnsxd_rr.type =:= ?DNS_TYPE_DNSKEY,
+    TTL = (hd(Set))#dnsxd_rr.ttl,
+    RevSet = lists:foldl(
+	       fun(#dnsxd_dnssec_key{alg = Alg, ksk = KSK, key = Key,
+				     keytag = KeyTag}, Acc)
+		     when Alg =:= ?DNS_ALG_NSEC3RSASHA1 andalso
+			  KeyTag =/= undefined andalso
+			  (KSK =:= false orelse KSK =:= UseKSK) ->
+		       Opts = [], %% calc incept, expire
+		       #dns_rr{name = Name,
+			       type = ?DNS_TYPE_RRSIG,
+			       class = Class,
+			       ttl = TTL,
+			       data = Data}
+			   = dnssec:sign_rrset(RRs, SignersName, KeyTag, Alg,
+					       Key, Opts),
+		       RRSIG = #dnsxd_rr{name = Name,
+					 type = ?DNS_TYPE_RRSIG,
+					 class = Class,
+					 ttl = TTL,
+					 data = Data},
+		       [RRSIG|Acc];
+		  (#dnsxd_dnssec_key{}, Acc) ->
+		       Acc
+	       end, Set, Keys),
+    lists:reverse(RevSet).
+
+add_nsec3(NxDom, #ctx{dnssec = true, nsec3 = #dnsxd_nsec3_param{}} = Ctx,
+	  #dns_query{} = Query, RR) ->
+    Name = dns:dname_to_lower(Query#dns_query.name),
+    DName = dns:encode_dname(Name),
+    if NxDom ->
+	    Types = lists:seq(1,33,3) ++ [?DNS_TYPE_RRSIG],
+	    [_|WildAsc] = dns:dname_to_labels(Name),
+	    WDName = dns:encode_dname(join_labels([<<$*>>|WildAsc])),
+	    %% closest encloser
+	    NSEC3 = make_nsec3(Ctx, false, DName, Types),
+	    %% wild closest encloser
+	    NSEC3Wild = make_nsec3(Ctx, false, WDName, Types),
+	    [NSEC3, NSEC3Wild | RR];
+       true -> %% Name exists, but no data
+	    Types = [T || #dnsxd_rr{name = N, type = T} <- Ctx#ctx.rr,
+			  N =:= Name],
+	    NSEC3 = make_nsec3(Ctx, true, DName, Types),
+	    [NSEC3 | RR]
+    end;
+add_nsec3(_NxDom, #ctx{}, #dns_query{}, RR) -> RR.
+
+make_nsec3(#ctx{} = Ctx,  CoverName, Name, Types) ->
+    #ctx{zonename = ZoneName, nsec3 = NSEC3, soa = SOA,
+	 cur_serial = CurSerial, next_serial = NextSerial} = Ctx,
+    #dnsxd_nsec3_param{hash = HashNum, salt = Salt, iter = Iter} = NSEC3,
+    MaxTTL = SOA#dnsxd_soa_param.minimum,
+    TimeToNextSerial = NextSerial - CurSerial,
+    TTL = case TimeToNextSerial > MaxTTL of
+	      true -> MaxTTL;
+	      false -> TimeToNextSerial
+	  end,
+    HashFun = case HashNum of
+		  1 -> fun crypto:sha/1
+	      end,
+    Hash = ih(HashFun, Salt, dns:dname_to_lower(Name), Iter),
+    HashP = case CoverName of
+		true -> base32hex_encode(Hash);
+		false -> base32hex_encode(hash_bump(Hash, -1))
+	    end,
+    NextHash = hash_bump(Hash, +1),
+    RRName = <<HashP/binary, $., ZoneName/binary>>,
+    Data = #dns_rrdata_nsec3{hash_alg = HashNum,
+			     opt_out = false,
+			     iterations = Iter,
+			     salt = Salt,
+			     hash = NextHash,
+			     types = Types},
+    #dnsxd_rr{name = RRName, class = ?DNS_CLASS_IN, type = ?DNS_TYPE_NSEC3,
+	      incept = CurSerial, expire = NextSerial, ttl = TTL, data = Data}.
+
+hash_bump(Hash, Amount) ->
+    HashS = byte_size(Hash),
+    <<Num:HashS/unit:8>> = Hash,
+    <<(Num + Amount):HashS/unit:8>>.
+
+ih(H, Salt, X, 0) -> H([X, Salt]);
+ih(H, Salt, X, I) -> ih(H, Salt, H([X, Salt]), I - 1).
+
+base32hex_encode(Bin) when bit_size(Bin) rem 5 =/= 0 ->
+    PadBy = byte_size(Bin) rem 5,
+    base32hex_encode(<<Bin/bitstring, 0:PadBy>>);
+base32hex_encode(Bin) when bit_size(Bin) rem 5 =:= 0 ->
+    << <<(base32hex_encode(I))>> || <<I:5>> <= Bin >>;
+base32hex_encode(Int)
+  when is_integer(Int) andalso Int >= 0 andalso Int =< 9 -> Int + 48;
+base32hex_encode(Int)
+  when is_integer(Int) andalso Int >= 10 andalso Int =< 31 -> Int + 55.
 
 match_name(Name, #dnsxd_rr{name = Name}) -> true;
 match_name(_, _) -> false.
 
 match_qtype(#ctx{}, ?DNS_TYPE_ANY, #dnsxd_rr{}) -> true;
 match_qtype(#ctx{}, Type, #dnsxd_rr{type = Type}) -> true;
+match_qtype(#ctx{dnssec= true}, Type,
+	    #dnsxd_rr{type = ?DNS_TYPE_RRSIG,
+		      data = #dns_rrdata_rrsig{type_covered = Type}}) -> true;
 match_qtype(#ctx{}, _Type, #dnsxd_rr{}) -> false.
 
 match_down(#ctx{cuts = Cuts, names = Names, rr = RRs} = Q,

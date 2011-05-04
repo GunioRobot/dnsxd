@@ -34,8 +34,7 @@
 
 -define(APP_DEPS, [sasl, ibrowse, couchbeam]).
 
--record(state, {local_ref, local_seq, local_lost = false,
-		import_ref, import_seq, import_lost = false,
+-record(state, {db_ref, db_seq, db_lost = false,
 		compact_ref, compact_finished, compact_pid}).
 
 %%%===================================================================
@@ -43,7 +42,7 @@
 %%%===================================================================
 
 start_link() ->
-    {ok, DsOpts} = dnsxd:datastore_opts(),
+    DsOpts = dnsxd:datastore_opts(),
     Timeout = proplists:get_value(init_timeout, DsOpts, 60000),
     case dnsxd_lib:ensure_apps_started(?APP_DEPS) of
 	ok ->
@@ -72,6 +71,8 @@ update_zone(Started, Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
 		{error, conflict} ->
 		    update_zone(Started, Attempts, MsgCtx, Key, ZoneName,
 				PreReqs, Updates);
+		{error, disabled} ->
+		    servfail;
 		{error, _Error} ->
 		    %% todo: log the error
 		    update_zone(Started, Attempts + 1, MsgCtx, Key, ZoneName,
@@ -84,12 +85,9 @@ update_zone(Started, Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
 %%%===================================================================
 
 init([]) ->
-    {ok, LocalRef, LocalSeq} = setup_monitor(local),
-    {ok, ImportRef, ImportSeq} = setup_monitor(import),
-    State = #state{local_ref = LocalRef, import_ref = ImportRef,
-		   local_seq = LocalSeq, import_seq = ImportSeq},
-    ok = init_load_zones(local),
-    ok = init_load_zones(import),
+    {ok, DbRef, DbSeq} = setup_monitor(),
+    State = #state{db_ref = DbRef, db_seq = DbSeq},
+    ok = init_load_zones(),
     {ok, State}.
 
 handle_call(compact_finished, _From, #state{} = State) ->
@@ -131,94 +129,53 @@ handle_info(run_compact, #state{compact_pid = OldPid} = State) ->
 	    NewState = State#state{compact_pid = Pid},
 	    {noreply, NewState}
     end;
-handle_info({Ref, {last_seq, NewSeq}}, #state{local_ref = Ref} = State) ->
-    NewState = State#state{local_seq = NewSeq},
+handle_info({Ref, {last_seq, NewSeq}}, #state{db_ref = Ref} = State) ->
+    NewState = State#state{db_seq = NewSeq},
     {noreply, NewState};
-handle_info({Ref, {last_seq, NewSeq}}, #state{import_ref = Ref} = State) ->
-    NewState = State#state{import_seq = NewSeq},
-    {noreply, NewState};
-handle_info({Ref, done}, #state{local_ref = Ref, local_seq = Seq,
-				local_lost = Lost} = State) ->
-    case setup_monitor(local, Seq) of
+handle_info({Ref, done},
+	    #state{db_ref = Ref, db_seq = Seq, db_lost = Lost} = State) ->
+    case setup_monitor(Seq) of
 	{ok, NewRef, Seq} ->
-	    if Lost -> ?DNSXD_INFO("Reconnected local db poll");
+	    if Lost -> ?DNSXD_INFO("Reconnected db poll");
 	       true -> ok end,
-	    {noreply, State#state{local_ref = NewRef, local_lost = false}};
+	    {noreply, State#state{db_ref = NewRef, db_lost = false}};
 	{error, Error} ->
-	    ?DNSXD_ERR("Unable to reconnect local db poll:~n"
+	    ?DNSXD_ERR("Unable to reconnect db poll:~n"
 		       "~p~n"
 		       "Retrying in 30 seconds", [Error]),
 	    {ok, _} = timer:send_after(30000, self(), {Ref, done}),
 	    {noreply, State}
     end;
-handle_info({Ref, done}, #state{import_ref = Ref, import_seq = Seq,
-				import_lost = Lost} = State) ->
-    case setup_monitor(import, Seq) of
-	{ok, NewRef, Seq} ->
-	    if Lost -> ?DNSXD_INFO("Reconnected import db poll");
-	       true -> ok end,
-	    {noreply, State#state{import_ref = NewRef, import_lost = false}};
-	{error, Error} ->
-	    ?DNSXD_INFO("Unable to reconnect import db poll:~n"
-			"~p~n"
-			"Retrying in 30 seconds", [Error]),
-	    {ok, _} = timer:send_after(30000, self(), {Ref, done}),
-	    {noreply, State}
-    end;
-handle_info({Ref, {error, Error}}, #state{local_ref = Ref} = State) ->
-    ?DNSXD_ERR("Lost local db connection:~n~p", [Error]),
+handle_info({Ref, {error, Error}}, #state{db_ref = Ref} = State) ->
+    ?DNSXD_ERR("Lost db connection:~n~p", [Error]),
     {ok, _} = timer:send_after(0, self(), {Ref, done}),
-    NewState = State#state{local_lost = true},
+    NewState = State#state{db_lost = true},
     {noreply, NewState};
-handle_info({Ref, {error, Error}}, #state{import_ref = Ref} = State) ->
-    ?DNSXD_ERR("Lost import db connection:~n~p", [Error]),
-    {ok, _} = timer:send_after(0, self(), {Ref, done}),
-    NewState = State#state{import_lost = true},
-    {noreply, NewState};
-handle_info({Ref, {change, {Props}}}, #state{local_ref = Ref} = State) ->
+handle_info({Ref, {change, {Props}}}, #state{db_ref = Ref} = State) ->
     Name = proplists:get_value(<<"id">>, Props),
     Exists = dnsxd:zone_loaded(Name),
-    Message = case load_zone(local, Name) of
+    Message = case load_zone(Name) of
+		  {error, not_zone} ->
+		      dnsxd:delete_zone(Name),
+		      "Doc ~s is not a zone.";
+		  {error, not_found} ->
+		      dnsxd:delete_zone(Name),
+		      "Zone ~s deleted.";
 		  {error, deleted} ->
 		      dnsxd:delete_zone(Name),
-		      "Local zone ~s deleted.";
+		      "Zone ~s deleted.";
 		  {error, disabled} ->
-		      case dnsxd:get_zone(Name) of
-			  #dnsxd_zone{opaque_ds_id = {local, _}} ->
-			      dnsxd:delete_zone(Name);
-			  _ -> ok
-		      end,
-		      "Local zone ~s disabled.";
+		      dnsxd:delete_zone(Name),
+		      "Zone ~s disabled.";
 		  ok when Exists ->
-		      "Local zone ~s reloaded.";
+		      "Zone ~s reloaded.";
 		  ok ->
-		      "Local zone ~s loaded."
+		      "Zone ~s loaded."
 	      end,
     ?DNSXD_INFO(Message, [Name]),
     {noreply, State};
-handle_info({Ref, {change, {Doc}}}, #state{import_ref = Ref} = State) ->
-    Name = proplists:get_value(<<"_id">>, Doc),
-    Exists = dnsxd:zone_loaded(Name),
-    case load_zone(import, Name) of
-	{error, deleted} ->
-	    dnsxd:delete_zone(Name),
-	    ?DNSXD_INFO("Import zone ~s deleted.", [Name]);
-	{error, local_zone_exists} ->
-	    ?DNSXD_ERR("Import zone ~s changed but cannot be loaded as "
-		       "it conflicts with an existing local zone.", [Name]);
-	ok ->
-	    Msg = case Exists of
-		      true -> "Import zone ~s reloaded.~n";
-		      false -> "Import zone ~s loaded.~n"
-		  end,
-	    ?DNSXD_INFO(Msg, [Name])
-    end,
-    {noreply, State};
-handle_info({Ref, Msg}, #state{local_ref = Ref} = State) ->
-    ?DNSXD_ERR("Stray message concerning local_ref: ~n~p~n", [Msg]),
-    {noreply, State};
-handle_info({Ref, Msg}, #state{import_ref = Ref} = State) ->
-    ?DNSXD_ERR("Stray message concerning import_ref: ~n~p~n", [Msg]),
+handle_info({Ref, Msg}, #state{db_ref = Ref} = State) ->
+    ?DNSXD_ERR("Stray message concerning db_ref: ~n~p~n", [Msg]),
     {noreply, State};
 handle_info(Info, State) ->
     ?DNSXD_ERR("Stray message:~n~p", [Info]),
@@ -234,170 +191,114 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-load_zone(DbAtom, ZoneName) ->
-    case get_zone(DbAtom, ZoneName) of
-	{ok, Zone} ->
-	    case Zone of
-		#dnsxd_couch_lz{export = true} ->
-		    ExportZone = to_ez_zone(Zone),
-		    ok = dnsxd_couch_zone:put(ExportZone),
-		    insert_zone(Zone);
-		#dnsxd_couch_lz{export = false} ->
-		    ok = remove_export(ZoneName),
-		    insert_zone(Zone);
-		#dnsxd_couch_ez{} ->
-		    insert_zone(Zone)
-	    end;
+load_zone(ZoneName) ->
+    case dnsxd_couch_zone:get(ZoneName) of
+	{ok, #dnsxd_couch_zone{} = Zone} ->
+	    insert_zone(Zone);
 	{error, Error} ->
 	    {error, Error}
     end.
 
-get_zone(DbAtom, ZoneName) ->
-    case dnsxd_couch_zone:get(DbAtom, ZoneName) of
-	{ok, Zone} ->
-	    dnsxd_couch_zone:prepare(Zone);
-	{error, Error} ->
-	    {error, Error}
-    end.
-
-get_zone(DbAtom, DbRef, ZoneName) ->
-    case dnsxd_couch_zone:get(DbAtom, DbRef, ZoneName) of
-	{ok, Zone} ->
-	    dnsxd_couch_zone:prepare(Zone);
-	{error, Error} ->
-	    {error, Error}
-    end.
-
-insert_zone(#dnsxd_couch_lz{} = CouchZone) ->
+insert_zone(#dnsxd_couch_zone{enabled = true} = CouchZone) ->
     Zone = to_dnsxd_zone(CouchZone),
     dnsxd:reload_zone(Zone);
-insert_zone(#dnsxd_couch_ez{} = CouchZone) ->
-    Zone = to_dnsxd_zone(CouchZone),
-    case dnsxd:get_zone(Zone) of
-	#dnsxd_zone{opaque_ds_id = {local, _}} ->
-	    {error, conflict};
-	_ ->
-	    dnsxd:reload_zone(Zone)
-    end.
+insert_zone(#dnsxd_couch_zone{enabled = false}) ->
+    {error, disabled}.
 
-init_load_zones(DbAtom) ->
-    {ok, DbRef} = dnsxd_couch_lib:get_db(DbAtom),
+init_load_zones() ->
+    {ok, DbRef} = dnsxd_couch_lib:get_db(),
     {ok, AllDocs} = couchbeam:all_docs(DbRef, []),
-    init_load_zones(DbAtom, DbRef, AllDocs).
+    init_load_zones(DbRef, AllDocs).
 
-init_load_zones(local, LocalDbRef, LocalDocs) ->
-    Fun0 = fun({Props}, Acc) ->
-		   ZoneName = get_value(<<"id">>, Props),
-		   {ok, Zone} = get_zone(local, LocalDbRef, ZoneName),
-		   ok = insert_zone(Zone),
-		   case Zone of
-		       #dnsxd_couch_lz{export = true} -> [ZoneName|Acc];
-		       #dnsxd_couch_lz{} -> Acc
-		   end
-	   end,
-    ExportedNames = couchbeam_view:fold(LocalDocs, Fun0),
-    {ok, ExportDbRef} = dnsxd_couch_lib:get_db(export),
-    {ok, ExportDocs} = couchbeam:all_docs(ExportDbRef, [{include_docs, true}]),
-    Fun1 = fun({Props}, Acc) ->
-		   Id = get_value(<<"id">>, Props),
-		   Doc = get_value(<<"doc">>, Props),
-		   case lists:member(Id, ExportedNames) of
-		       true -> Acc;
-		       false -> [Doc|Acc]
-		   end
-	   end,
-    DeleteDocs = couchbeam_view:fold(ExportDocs, Fun1),
-    {ok, _} = couchbeam:delete_docs(ExportDbRef, DeleteDocs),
-    ok;
-init_load_zones(import, ImportDbRef, ImportDocs) ->
+init_load_zones(DbRef, Docs) ->
     Fun = fun({Props}) ->
 		  ZoneName = get_value(<<"id">>, Props),
-		  case get_zone(import, ImportDbRef, ZoneName) of
-		      {ok, Zone} ->
-			  case insert_zone(Zone) of
-			      ok -> ok;
-			      {error, conflict} ->
-				  Fmt = ("Imported zone ~s not loaded "
-					 "- zone name in use"),
-				  ?DNSXD_INFO(Fmt, [ZoneName])
-			  end;
-		      {error, not_zone} ->
-			  ?DNSXD_ERR("Import zone ~s is not valid", [ZoneName])
+		  case dnsxd_couch_zone:get(DbRef, ZoneName) of
+		      {ok, #dnsxd_couch_zone{enabled = true} = Zone} ->
+			  ok = insert_zone(Zone);
+		      {ok, #dnsxd_couch_zone{enabled = false}} ->
+			  ok;
+		      {error, deleted} -> ok;
+		      {error, not_zone} -> ok
 		  end
 	  end,
-    couchbeam_view:foreach(ImportDocs, Fun).
-
-remove_export(ZoneName) ->
-    {ok, DbRef} = dnsxd_couch_lib:get_db(export),
-    case couchbeam:open_doc(DbRef, ZoneName) of
-	{ok, Doc} ->
-	    case couchbeam:delete_doc(DbRef, Doc) of
-		{ok, _} ->
-		    ok;
-		{error, Error} ->
-		    {error, Error}
-	    end;
-	{error, not_found} ->
-	    ok;
-	{error, Error} ->
-	    {error, Error}
-    end.
+    ok = couchbeam_view:foreach(Docs, Fun).
 
 couch_tk_to_dnsxd_key(#dnsxd_couch_tk{id = Id,
 				      name = Name,
 				      secret = Secret,
 				      dnssd_only = DnssdOnly}) ->
-    #dnsxd_key{opaque_ds_id = Id,
-	       name = Name,
-	       secret = Secret,
-	       dnssd_only = DnssdOnly}.
+    #dnsxd_tsig_key{opaque_ds_id = Id,
+		    name = Name,
+		    secret = Secret,
+		    dnssd_only = DnssdOnly}.
+
+couch_dk_to_dnsxd_key(#dnsxd_couch_dk{id = Id, incept = Incept, expire = Expire,
+				      alg = Alg, ksk = KSK,
+				      data = #dnsxd_couch_dk_rsa{} = Data}) ->
+    #dnsxd_couch_dk_rsa{e = E, n = N, d = D} = Data,
+    Fun = fun(B64) ->
+		  Bin = base64:decode(B64),
+		  BinSize = byte_size(Bin),
+		  <<BinSize:32, Bin/binary>>
+	  end,
+    Key = [ Fun(X) || X <- [E, N, D] ],
+    #dnsxd_dnssec_key{ds_id = Id, incept = Incept, expire = Expire, alg = Alg,
+		      ksk = KSK, key = Key}.
 
 cancel_timer(Ref) when is_reference(Ref) ->
     _ = erlang:cancel_timer(Ref),
     ok;
 cancel_timer(undefined) -> ok.
 
-to_dnsxd_zone(#dnsxd_couch_lz{name = Name,
-			      rr = CouchRRs,
-			      axfr_enabled = AXFREnabled,
-			      axfr_hosts = AXFRHosts,
-			      tsig_keys = CouchKeys}) ->
+to_dnsxd_zone(#dnsxd_couch_zone{name = Name,
+				rr = CouchRRs,
+				axfr_enabled = AXFREnabled,
+				axfr_hosts = AXFRHosts,
+				tsig_keys = CouchTSIGKeys,
+				soa_param = CouchSP,
+				dnssec_enabled = DNSSEC,
+				dnssec_keys = CouchDNSSECKeys,
+				dnssec_nsec3_param = NSEC3Param,
+				dnssec_siglife = SigLife}) ->
     RRs = [ to_dnsxd_rr(RR) || RR <- CouchRRs ],
     Serials = dnsxd_couch_lib:get_serials(CouchRRs),
-    Keys = [ couch_tk_to_dnsxd_key(Key)
-	     || Key <- CouchKeys,
-		Key#dnsxd_couch_tk.enabled,
-		not is_integer(Key#dnsxd_couch_tk.tombstone) ],
-    #dnsxd_zone{opaque_ds_id = {local, Name},
+    TSIGKeys = [ couch_tk_to_dnsxd_key(Key)
+		 || Key <- CouchTSIGKeys,
+		    Key#dnsxd_couch_tk.enabled,
+		    not is_integer(Key#dnsxd_couch_tk.tombstone) ],
+    DNSSECKeys = [ couch_dk_to_dnsxd_key(Key)
+		   || Key <- CouchDNSSECKeys ],
+    #dnsxd_couch_sp{mname = MName,
+		    rname = RName,
+		    refresh = Refresh,
+		    retry = Retry,
+		    expire = Expire,
+		    minimum = Minimum} = CouchSP,
+    SP = #dnsxd_soa_param{mname = MName,
+			  rname = RName,
+			  refresh = Refresh,
+			  retry = Retry,
+			  expire = Expire,
+			  minimum = Minimum},
+    NSEC3 = case NSEC3Param of
+		#dnsxd_couch_nsec3param{salt = Salt, iter = Iter, alg = Alg} ->
+		    #dnsxd_nsec3_param{hash = Alg, salt = Salt, iter = Iter};
+		_ ->
+		    undefined
+	    end,
+    #dnsxd_zone{opaque_ds_id = Name,
 		name = Name,
 		rr = RRs,
 		serials = Serials,
 		axfr_enabled = AXFREnabled,
 		axfr_hosts = AXFRHosts,
-		keys = Keys};
-to_dnsxd_zone(#dnsxd_couch_ez{name = Name,
-			      rr = CouchRRs,
-			      axfr_enabled = AXFREnabled,
-			      axfr_hosts = AXFRHosts}) ->
-    RRs = [ to_dnsxd_rr(RR) || RR <- CouchRRs ],
-    Serials = dnsxd_couch_lib:get_serials(CouchRRs),
-    #dnsxd_zone{opaque_ds_id = {import, Name},
-		name = Name,
-		rr = RRs,
-		serials = Serials,
-		axfr_enabled = AXFREnabled,
-		axfr_hosts = AXFRHosts}.
-
-to_ez_zone(#dnsxd_couch_lz{name = Name,
-			   rr = RRs,
-			   axfr_enabled = AXFREnabled,
-			   axfr_hosts = AXFRHosts,
-			   soa_param = SOAParam}) ->
-    #dnsxd_couch_ez{name = Name,
-		    rr = RRs,
-		    axfr_enabled = AXFREnabled,
-		    axfr_hosts = AXFRHosts,
-		    soa_param = SOAParam}.
+		tsig_keys = TSIGKeys,
+		soa_param = SP,
+		dnssec_enabled = DNSSEC,
+		dnssec_keys = DNSSECKeys,
+		dnssec_siglife = SigLife,
+		nsec3 = NSEC3}.
 
 to_dnsxd_rr(#dnsxd_couch_rr{incept = Incept,
 			    expire = Expire,
@@ -414,8 +315,8 @@ to_dnsxd_rr(#dnsxd_couch_rr{incept = Incept,
 	      ttl = TTL,
 	      data = Data}.
 
-setup_monitor(Db) ->
-    case dnsxd_couch_lib:get_db(Db) of
+setup_monitor() ->
+    case dnsxd_couch_lib:get_db() of
 	{ok, DbRef} ->
 	    case couchbeam:db_info(DbRef) of
 		{ok, {DbInfo}} ->
@@ -428,13 +329,14 @@ setup_monitor(Db) ->
 	    {error, Error}
     end.
 
-setup_monitor(Db, Since) when is_atom(Db) ->
-    case dnsxd_couch_lib:get_db(Db) of
+setup_monitor(Since) ->
+    case dnsxd_couch_lib:get_db() of
 	{ok, DbRef} ->
 	    setup_monitor(DbRef, Since);
 	{error, Error} ->
 	    {error, Error}
-    end;
+    end.
+
 setup_monitor(DbRef, Since) when is_tuple(DbRef) ->
     Opts = [{since, Since}, {feed, "continuous"}, {heartbeat, true}],
     case couchbeam:changes_wait(DbRef, self(), Opts) of
@@ -442,23 +344,19 @@ setup_monitor(DbRef, Since) when is_tuple(DbRef) ->
 	{error, Error} -> {error, Error}
     end.
 
-start_compact() ->
-    Fun = fun() -> compact([local, import, export]) end,
-    spawn(Fun).
+start_compact() -> spawn(fun compact/0).
 
-compact([]) ->
-    ok = gen_server:call(?SERVER, compact_finished, 60 * 1000);
-compact([Db|Dbs]) ->
-    case dnsxd_couch_lib:get_db(Db) of
+compact() ->
+    case dnsxd_couch_lib:get_db() of
 	{ok, DbRef} ->
 	    case couchbeam:compact(DbRef) of
 		ok ->
-		    compact(Dbs);
+		    ok = gen_server:call(?SERVER, compact_finished, 60 * 1000);
 		{error, Error} ->
-		    ?DNSXD_ERR("Error compacting db ~p:~n~p", [Db, Error])
+		    ?DNSXD_ERR("Error compacting db:~n~p", [Error])
 	    end;
 	{error, Error} ->
-	    ?DNSXD_ERR("Error getting db ~p for compaction:~n~p", [Db, Error])
+	    ?DNSXD_ERR("Error getting db for compaction:~n~p", [Error])
     end.
 
 get_value(Key, List) ->

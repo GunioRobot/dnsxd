@@ -95,7 +95,7 @@ set_max_size(MsgCtx, #dns_message{} = ReqMsg) ->
 		_ ->
 		    dnsxd_op_ctx:max_size(MsgCtx, 512)
 	    end;
-	_ -> MsgCtx
+	_ -> dnsxd_op_ctx:max_size(MsgCtx, 0)
     end.
 
 get_tsig(#dns_message{additional = []}) -> undefined;
@@ -115,7 +115,7 @@ verify_tsig(MsgCtx, ReqMsg, #dns_rr{name = KeyNameM, data = Data}, ReqMsgBin) ->
 				   auc = 0, authority = [],
 				   ad = 0, additional = []},
     case dnsxd:get_key(KeyName) of
-	{ZoneName, #dnsxd_key{secret = Secret}} ->
+	{ZoneName, #dnsxd_tsig_key{secret = Secret}} ->
 	    case dns:verify_tsig(ReqMsgBin, KeyName, Secret) of
 		{ok, MAC} when is_binary(MAC) ->
 		    TSIGCtx = #dnsxd_tsig_ctx{zonename = ZoneName,

@@ -21,7 +21,7 @@
 -include("dnsxd_couch.hrl").
 
 %% API
--export([get_db/1, get_serials/1]).
+-export([get_db/0, get_serials/1]).
 
 -define(SERVER, dnsxd_couch).
 -define(DB_PREFIX, "dnsxd_couch").
@@ -30,20 +30,14 @@
 %%% API
 %%%===================================================================
 
-get_db(DbAtom)
-  when DbAtom =:= local orelse DbAtom =:= import orelse DbAtom =:= export ->
-    case dnsxd:datastore_opts() of
-	{ok, CfgOpts} when is_list(CfgOpts) -> CfgOpts;
-	_ -> CfgOpts = []
-    end,
+get_db() ->
+    CfgOpts = dnsxd:datastore_opts(),
     Host = proplists:get_value(host, CfgOpts, "localhost"),
     Port = proplists:get_value(port, CfgOpts, 5984),
     Prefix = proplists:get_value(prefix, CfgOpts, ""),
     Options = proplists:get_value(options, CfgOpts, []),
     Server = couchbeam:server_connection(Host, Port, Prefix, Options),
-    Databases = proplists:get_value(databases, CfgOpts, []),
-    DefaultDbName = ?DB_PREFIX ++ atom_to_list(DbAtom),
-    DbName = proplists:get_value(DbAtom, Databases, DefaultDbName),
+    DbName = proplists:get_value(database, CfgOpts, "dnsxd_zones"),
     couchbeam:open_or_create_db(Server, DbName, []).
 
 get_serials(RR) ->

@@ -61,7 +61,7 @@ handle(MsgCtx, #dns_message{} = ReqMsg) ->
 run(MsgCtx,
     #dns_message{questions = [#dns_query{name = ZoneNameM}],
 		 answers = PreReqs, authority = Updates} = ReqMsg,
-    #dnsxd_key{name = KeyName, dnssd_only = DNSSDOnly} = Key) ->
+    #dnsxd_tsig_key{name = KeyName, dnssd_only = DNSSDOnly} = Key) ->
     ZoneName = dns:dname_to_lower(ZoneNameM),
     ZoneNameLabels = dns:dname_to_labels(ZoneName),
     KeyNameSize = byte_size(KeyName),
@@ -90,7 +90,7 @@ update(MsgCtx,
        #dns_message{questions = [#dns_query{name = ZoneName,
 					    class = ZoneClass}],
 		    answers = PreReqRR, authority = UpdateRR} = ReqMsg,
-       #dnsxd_key{} = Key) ->
+       #dnsxd_tsig_key{} = Key) ->
     LeaseLength = get_ull(ReqMsg),
     PreReqFun = fun(RR) -> rr_to_prereq(ZoneClass, RR) end,
     UpdateFun = fun(RR) -> rr_to_update(ZoneClass, LeaseLength, RR) end,
@@ -169,7 +169,7 @@ is_dnssd_rr(ZoneNameLabels, _KeyName, #dns_rr{} = RR) ->
     dnsxd_lib:is_dnssd_rr(ZoneNameLabels, RR).
 
 get_ull(#dns_message{additional = [#dns_optrr{data = Data}|_]}) ->
-    {ok, Opts} = dnsxd:update_opts(),
+    Opts = dnsxd:update_opts(),
     MinLease = proplists:get_value(min_lease, Opts, 600),
     MaxLease = proplists:get_value(max_lease, Opts, 1200),
     Default = case proplists:get_value(default_lease, Opts, undefined) of
@@ -186,7 +186,7 @@ get_ull(#dns_message{additional = [#dns_optrr{data = Data}|_]}) ->
 	false -> Default
     end;
 get_ull(_) ->
-    {ok, Opts} = dnsxd:update_opts(),
+    Opts = dnsxd:update_opts(),
     MinLease = proplists:get_value(min_lease, Opts, 600),
     MaxLease = proplists:get_value(max_lease, Opts, 1800),
     case proplists:get_value(default_lease, Opts, undefined) of

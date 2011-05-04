@@ -5,29 +5,27 @@
 
 -define(DNSXD_COUCH_SERVER, dnsxd_couch).
 
-%% local zone
--record(dnsxd_couch_lz, {name,
-			 enabled = false,
-			 enabled_set = dns:unix_time(),
-			 rev,
-			 rr = [],
-			 axfr_enabled = false,
-			 axfr_enabled_set = dns:unix_time(),
-			 axfr_hosts = [],
-			 tsig_keys = [],
-			 export = false,
-			 export_set = dns:unix_time(),
-			 history = [],
-			 soa_param,
-			 soa_param_set = dns:unix_time()}).
-
-%% exported zone
--record(dnsxd_couch_ez, {name,
-			 rev,
-			 rr = [],
-			 axfr_enabled = false,
-			 axfr_hosts = [],
-			 soa_param}).
+%% zone
+-record(dnsxd_couch_zone, {name,
+			   enabled = false,
+			   enabled_set = dns:unix_time(),
+			   rev,
+			   rr = [],
+			   axfr_enabled = false,
+			   axfr_enabled_set = dns:unix_time(),
+			   axfr_hosts = [],
+			   tsig_keys = [],
+			   history = [],
+			   soa_param,
+			   soa_param_set = dns:unix_time(),
+			   dnssec_enabled = false,
+			   dnssec_enabled_set = dns:unix_time(),
+			   dnssec_keys = [],
+			   dnssec_nsec3_param,
+			   dnssec_nsec3_param_set = dns:unix_time(),
+			   dnssec_siglife = 1250000,
+			   dnssec_siglife_set = dns:unix_time()
+			  }).
 
 %% soa param
 -record(dnsxd_couch_sp, {set = dns:unix_time(),
@@ -59,6 +57,17 @@
 			 ttl,
 			 data,
 			 tombstone = null}).
+
+%% dnssec
+-record(dnsxd_couch_dk, {id = dnsxd_lib:new_id(),
+			 incept = dns:unix_time(),
+			 expire = dns:unix_time() + 883593927,
+			 set = dns:unix_time(),
+			 alg,
+			 ksk = false,
+			 data}).
+-record(dnsxd_couch_dk_rsa, {e, n, d}).
+-record(dnsxd_couch_nsec3param, {salt, iter, alg}).
 
 %% history entry
 -record(dnsxd_couch_he, {id = dnsxd_lib:new_id(),

@@ -21,7 +21,15 @@
 		     serials,
 		     axfr_enabled,
 		     axfr_hosts,
-		     keys = []}).
+		     tsig_keys = [],
+		     soa_param,
+		     dnssec_enabled = false,
+		     dnssec_keys = [],
+		     dnssec_siglife = 1250000,
+		     nsec3}).
+
+-record(dnsxd_soa_param, {mname, rname, refresh, retry, expire, minimum}).
+-record(dnsxd_nsec3_param, {hash, salt, iter}).
 
 -record(dnsxd_rr, {incept,
 		   expire,
@@ -31,6 +39,7 @@
 		   ttl,
 		   data}).
 
--record(dnsxd_key, {opaque_ds_id, name, secret, dnssd_only}).
+-record(dnsxd_tsig_key, {opaque_ds_id, name, secret, dnssd_only}).
+-record(dnsxd_dnssec_key, {ds_id, incept, expire, alg, ksk, key, keytag}).
 
 -endif.

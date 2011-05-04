@@ -31,7 +31,7 @@ handle(MsgCtx, #dns_message{
 	 questions=[#dns_query{name = ZoneNameM}]} = ReqMsg) ->
     case dnsxd_op_ctx:protocol(MsgCtx) of
 	udp ->
-	    dnsxd_msg:reply(MsgCtx, ReqMsg, [{rc, formerr}]);
+	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]);
 	tcp ->
 	    ZoneName = dns:dname_to_lower(ZoneNameM),
 	    case dnsxd:get_zone(ZoneName) of
