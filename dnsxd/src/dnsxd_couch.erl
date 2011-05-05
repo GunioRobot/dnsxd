@@ -230,7 +230,7 @@ couch_tk_to_dnsxd_key(#dnsxd_couch_tk{id = Id,
 				      dnssd_only = DnssdOnly}) ->
     #dnsxd_tsig_key{opaque_ds_id = Id,
 		    name = Name,
-		    secret = Secret,
+		    secret = base64:decode(Secret),
 		    dnssd_only = DnssdOnly}.
 
 couch_dk_to_dnsxd_key(#dnsxd_couch_dk{id = Id, incept = Incept, expire = Expire,
