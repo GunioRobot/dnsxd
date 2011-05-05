@@ -166,7 +166,7 @@ handle_call({new_llq, Pid, MsgCtx,
 			  additional = [#dns_optrr{dnssec = ClientDNSSEC}|_]
 			 } = Msg}, _From, #state{llq_count = Count} = State) ->
     Name = dns:dname_to_lower(NameM),
-    {ok, Opts} = dnsxd:llq_opts(),
+    Opts = dnsxd:llq_opts(),
     MaxLLQ = proplists:get_value(max_llq, Opts, 500),
     Reply = case Count >= MaxLLQ of
 		true ->
