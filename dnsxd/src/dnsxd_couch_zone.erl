@@ -350,6 +350,10 @@ encode_zipper(dnsxd_couch_zone, dnssec_nsec3_param, NSEC3Param) ->
     {<<"dnssec_nsec3_param">>, encode(NSEC3Param)};
 encode_zipper(dnsxd_couch_zone, tsig_keys, Keys) ->
     {<<"tsig_keys">>, [ encode(Key) || Key <- Keys ]};
+encode_zipper(dnsxd_couch_zone, dnssec_keys, Keys) ->
+    {<<"dnssec_keys">>, [ encode(Key) || Key <- Keys ]};
+encode_zipper(dnsxd_couch_dk, data, Key) ->
+    {<<"data">>, encode(Key)};
 encode_zipper(dnsxd_couch_rr, data, Bin) when is_binary(Bin) ->
     {<<"data">>, base64:encode(Bin)};
 encode_zipper(dnsxd_couch_rr, data, Data) when is_tuple(Data) ->
