@@ -208,7 +208,7 @@ prescan(_ZoneName, [#dns_rr{class = ?DNS_CLASS_ANY, ttl = TTL, data = Data}|_])
     formerr;
 prescan(_ZoneName, [#dns_rr{class = ?DNS_CLASS_NONE, ttl = TTL}|_])
   when TTL =/= 0 ->
-    formerrr;
+    formerr;
 prescan(ZoneName, [#dns_rr{name = ZoneName}|RRs]) ->
     prescan(ZoneName, RRs);
 prescan(ZoneName, [#dns_rr{name = NameM}|RRs]) ->
