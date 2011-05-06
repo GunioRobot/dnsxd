@@ -334,7 +334,8 @@ encode(Rec) when is_tuple(Rec) ->
     PL = [ KV || KV <- lists:zipwith(Fun, fields(Tag), values(Rec)),
 		 KV =/= undefined ],
     {[{?ERL_REC_TAG, atom_to_binary(Tag, latin1)}|PL]};
-encode(undefined) -> null.
+encode(undefined) -> null;
+encode(null) -> null.
 
 encode_zipper(dnsxd_couch_zone, name, Name) ->
     {<<"_id">>, Name};
