@@ -113,7 +113,7 @@ verify_tsig(MsgCtx, ReqMsg, #dns_rr{name = KeyNameM, data = Data}, ReqMsgBin) ->
     ReplyTmpl = ReqMsg#dns_message{qr = true,
 				   anc = 0, answers = [],
 				   auc = 0, authority = [],
-				   ad = 0, additional = []},
+				   adc = 0, additional = []},
     case dnsxd:get_key(KeyName) of
 	{ZoneName, #dnsxd_tsig_key{secret = Secret}} ->
 	    case dns:verify_tsig(ReqMsgBin, KeyName, Secret) of
