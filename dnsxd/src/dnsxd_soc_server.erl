@@ -139,17 +139,17 @@ listen(Port, udp, BaseOpts) ->
     Opts = [{active, once}, binary|BaseOpts],
     case gen_udp:open(Port, Opts) of
 	{error, eacces} ->
-	    case fdsrv_start() of
-		ok ->
-		    case fdsrv:bind_socket(udp, Port) of
+	    case use_procket() of
+		true ->
+		    case procket_open(Port, udp, dgram) of
 			{ok, Fd} ->
 			    FdOpts = [{fd, Fd}|Opts],
 			    gen_udp:open(Port, FdOpts);
-			_ ->
-			    {error, fdsrv_bind_failed}
+			Error ->
+			    {error, {procket_bind_failed, Error}}
 		    end;
-		{error, Error} ->
-		    {error, Error}
+		false ->
+		    {error, eacces}
 	    end;
 	Other ->
 	    Other
@@ -158,17 +158,17 @@ listen(Port, tcp, BaseOpts) ->
     Opts = ?TCP_OPTS ++ BaseOpts,
     case gen_tcp:listen(Port, Opts) of
 	{error, eacces} ->
-	    case fdsrv_start() of
-		ok ->
-		    case fdsrv:bind_socket(tcp, Port) of
+	    case use_procket() of
+		true ->
+		    case procket_open(Port, tcp, stream) of
 			{ok, Fd} ->
 			    FdOpts = [{fd, Fd}|Opts],
 			    gen_tcp:listen(Port, FdOpts);
-			_ ->
-			    {error, fdsrv_bind_failed}
+			Error ->
+			    {error, {procket_bind_failed, Error}}
 		    end;
-		{error, Error} ->
-		    {error, Error}
+		false ->
+		    {error, eacces}
 	    end;
 	Other ->
 	    Other
@@ -265,11 +265,14 @@ spawn_workers(Num, IP, Port, Proto, Socket, Workers) ->
     NewWorkers = [Pid|Workers],
     spawn_workers(NewNum, IP, Port, Proto, Socket, NewWorkers).
 
-fdsrv_start() ->
-    try fdsrv:start() of
-	{ok, _Pid} -> ok;
-	{error, {already_started, _Pid}} -> ok;
-	_ -> {error, fdsrv_start_failed}
-    catch _:_ ->
-	    {error, fdsrv_start_failed}
+use_procket() ->
+    case dnsxd:get_env(procket) of
+	{ok, Props} when is_list(Props) ->
+	    proplists:get_bool(enabled, Props);
+	_ -> false
     end.
+
+procket_open(Port, Proto, Type) ->
+    {ok, Props} = dnsxd:get_env(procket),
+    Progname = proplists:get_value(progname, Props, "procket"),
+    procket:open(Port, [{progname, Progname}, {protocol, Proto}, {type, Type}]).
