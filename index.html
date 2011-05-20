@@ -1,0 +1,43 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html>
+<head>
+<title>dnsxd - Erlang DNS Server</title>
+<style>
+body { font-family: Helvetica; font-size: 130%; color: #222; background: #fefefe; }
+a { color: #22e; }
+div#main { width: 33.3em; margin: auto; }
+</style>
+</head>
+<body>
+<div id="main">
+  <h1>dnsxd</h1>
+  <p>dnsxd is an authoritative DNS server written in Erlang which supports:</p>
+  <ul>
+    <li>Apple Wide-Area Bonjour Extensions:
+    <ul>
+      <li>DNS Long Lived Queries</li>
+      <li>Update Leases</li>
+    </ul>
+  </li>
+  <li>DNS Update
+  <ul>
+    <li>Mandatory TSIGs</li>
+    <li>Optionally restricts clients to manipulating only DNSSD records
+  </ul>
+  </li>
+  <li>DNSSEC
+  <ul>
+    <li>NSEC3 white lies</li>
+    <li>RSA SHA1 signatures with SHA2 coming shortly</li>
+  </ul>
+  </li>
+  <li>Modular Backends:
+  <ul>
+    <li>CouchDB via CouchBeam</li>
+  </ul>
+  </li>
+</ul>
+<p>It has no release package or documentation at present. Source code is hosted on <a href="https://github.com/andrewtj/dnsxd">GitHub</a> and is available under the Apache 2 license. <a href="http://andrew.tj.id.au/email/">Inquiries</a>.</p>
+</div>
+</body>
+</html>

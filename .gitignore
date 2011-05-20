@@ -1,7 +1,0 @@
-*.dump
-.DS_Store
-doc/
-deps/
-ebin/
-.eunit/
-rel/dnsxd
