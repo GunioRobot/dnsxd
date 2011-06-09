@@ -31,10 +31,11 @@ add_serials_to_zone(#dnsxd_zone{rr = RR} = Zone) ->
     NewSerials = get_serials(RR),
     Zone#dnsxd_zone{serials = NewSerials}.
 
-add_ds(#dnsxd_zone{name = Name, dnssec_keys = Keys, soa_param = SOA} = Zone) ->
+add_ds(#dnsxd_zone{name = Name, dnssec_keys = Keys, soa_param = SOA,
+		   rr = RR} = Zone) ->
     TTL = SOA#dnsxd_soa_param.expire,
     {DSRR, TaggedKeys} = add_ds(Name, TTL, Keys),
-    NewRR = DSRR ++ Zone#dnsxd_zone.rr,
+    NewRR = DSRR ++ RR,
     Zone#dnsxd_zone{rr = NewRR, dnssec_keys = TaggedKeys}.
 
 add_ds(ZoneName, TTL, Keys) ->
@@ -153,8 +154,7 @@ pad_rr([Serial|Serials], #dnsxd_rr{incept = Incept, expire = Expire} = RR,
 	    NewRR = RR#dnsxd_rr{incept = SIncept, expire = SExpire},
 	    NewPaddedRRs = [NewRR|PaddedRRs],
 	    pad_rr(Serials, RR, NewPaddedRRs);
-       true ->
-	    pad_rr(Serials, RR, PaddedRRs)
+       true -> pad_rr(Serials, RR, PaddedRRs)
     end.
 
 to_rrsets(RRs) -> to_rrsets(RRs, dict:new()).
@@ -178,13 +178,13 @@ get_active_serials(Now, [_|Serials]) -> get_active_serials(Now, Serials).
 
 %%% ADD SOA + RELATED %%%
 
-add_soa(#dnsxd_zone{rr = RR,
-			  soa_param = #dnsxd_soa_param{mname = MName,
-						      rname = RName,
-						      refresh = Ref,
-						      retry = Ret,
-						      expire = Exp,
-						      minimum = Min}} = Zone) ->
+add_soa(#dnsxd_zone{rr = RR, soa_param = #dnsxd_soa_param{mname = MName,
+							  rname = RName,
+							  refresh = Ref,
+							  retry = Ret,
+							  expire = Exp,
+							  minimum = Min}
+		   } = Zone) ->
     Data = #dns_rrdata_soa{mname = MName,
 			   rname = RName,
 			   refresh = Ref,
@@ -197,25 +197,23 @@ add_soa(#dnsxd_zone{rr = RR,
 add_soa(#dnsxd_zone{name = Name, rr = RRs} = Zone,
 	[Serial], #dns_rrdata_soa{minimum = TTL} = Data) ->
     RR = #dnsxd_rr{incept = Serial,
-			 expire = undefined,
-			 name = Name,
-			 class = ?DNS_CLASS_IN,
-			 type = ?DNS_TYPE_SOA,
-			 ttl = TTL,
-			 data = Data#dns_rrdata_soa{serial = Serial}
-			},
+		   expire = undefined,
+		   name = Name,
+		   class = ?DNS_CLASS_IN,
+		   type = ?DNS_TYPE_SOA,
+		   ttl = TTL,
+		   data = Data#dns_rrdata_soa{serial = Serial}},
     NewRRs = [RR|RRs],
     Zone#dnsxd_zone{rr = NewRRs};
 add_soa(#dnsxd_zone{name = Name, rr = RRs} = Zone,
 	[Serial|[Next|_] = Serials], #dns_rrdata_soa{minimum = TTL} = Data) ->
     RR = #dnsxd_rr{incept = Serial,
-			 expire = Next,
-			 name = Name,
-			 class = ?DNS_CLASS_IN,
-			 type = ?DNS_TYPE_SOA,
-			 ttl = TTL,
-			 data = Data#dns_rrdata_soa{serial = Serial}
-			},
+		   expire = Next,
+		   name = Name,
+		   class = ?DNS_CLASS_IN,
+		   type = ?DNS_TYPE_SOA,
+		   ttl = TTL,
+		   data = Data#dns_rrdata_soa{serial = Serial}},
     NewRRs = [RR|RRs],
     NewZone = Zone#dnsxd_zone{rr = NewRRs},
     add_soa(NewZone, Serials, Data).

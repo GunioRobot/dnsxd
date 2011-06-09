@@ -76,22 +76,19 @@ answer(#dnsxd_zone{name = ZoneName, rr = RR, soa_param = SOA,
 %%%===================================================================
 
 current_serials(Now, [Current, Next|_])
-  when Now >= Current andalso Now < Next ->
-    {Current, Next};
-current_serials(Now, [_|Serials]) ->
-    current_serials(Now, Serials);
-current_serials(_Now, _Serials) ->
-    %% this should never happen...
-    {0, 0}.
+  when Now >= Current andalso Now < Next -> {Current, Next};
+current_serials(Now, [_|Serials]) -> current_serials(Now, Serials);
+current_serials(_Now, _Serials) -> {0, 0}. %% this should never happen
 
 an(#dns_query{name = NameM, type = Type} = Query,
-   #ctx{zonename = ZoneName} = Ctx, An) ->
+   #ctx{zonename = ZoneName, followed_names = FollowedNames, rr = RRs} = Ctx,
+   An) ->
     Name = dns:dname_to_lower(NameM),
-    SOA = lists:keyfind(?DNS_TYPE_SOA, #dnsxd_rr.type, Ctx#ctx.rr),
+    SOA = lists:keyfind(?DNS_TYPE_SOA, #dnsxd_rr.type, RRs),
     case Name of
 	ZoneName ->
 	    NewRRs = [ RR#dnsxd_rr{name = NameM}
-		       || #dnsxd_rr{} = RR <- Ctx#ctx.rr,
+		       || #dnsxd_rr{} = RR <- RRs,
 			  match_name(ZoneName, RR),
 			  match_qtype(Ctx, Type, RR) ],
 	    NewAn = An ++ NewRRs,
@@ -113,7 +110,6 @@ an(#dns_query{name = NameM, type = Type} = Query,
 		    case match_cname(Ctx, MatchRRs) of
 			{true, RRs, Next} ->
 			    NewRRs = [ RR#dnsxd_rr{name = NameM} || RR <- RRs ],
-			    FollowedNames = Ctx#ctx.followed_names,
 			    case lists:member(Next, FollowedNames) of
 				true -> {servfail, [], [], []};
 				false ->
@@ -135,12 +131,10 @@ an(#dns_query{name = NameM, type = Type} = Query,
 						   add_nsec3(false, Ctx, Query,
 							     [SOA])),
 				    {noerror, [], FinalAn, []};
-				_ ->
-				    au(Ctx, NewAn)
+				_ -> au(Ctx, NewAn)
 			    end
 		    end;
-		{referral, RefRRs} ->
-		    ad(Ctx, An, RefRRs);
+		{referral, RefRRs} -> ad(Ctx, An, RefRRs);
 		nomatch ->
 		    case An of
 			[] ->
@@ -159,7 +153,7 @@ au(#ctx{zonename = ZoneName, rr = RRs} = Q, An) ->
     ad(Q, An, Au).
 
 ad(#ctx{} = Ctx, An, Au) -> ad(Ctx, An, Au, []).
-ad(#ctx{} = Ctx, An, Au, Ad) ->
+ad(#ctx{rr = RRs} = Ctx, An, Au, Ad) ->
     Fun = fun(#dnsxd_rr{data = #dns_rrdata_ns{dname = DnameM}}, Acc) ->
 		  Dname = dns:dname_to_lower(DnameM),
 		  NewTargets = [ erlang:phash2({Dname, Type})
@@ -182,22 +176,22 @@ ad(#ctx{} = Ctx, An, Au, Ad) ->
     AuTargets = lists:foldl(Fun, [], Au),
     AdTargets = lists:foldl(Fun, [], Ad),
     Targets = lists:usort(AnTargets ++ AuTargets ++ AdTargets),
-    Matches = lists:filter(fun(#dnsxd_rr{name = Name, type = Type}) ->
-				   Hash = erlang:phash2({Name,Type}),
-				   lists:member(Hash, Targets)
-			   end, Ctx#ctx.rr),
+    Matches = [ RR || RR <- RRs, ad_filter(RR, Targets) ],
     NewAd = lists:usort(Matches ++ Ad),
     case NewAd of
 	Ad -> {noerror, sign(Ctx, An), sign(Ctx, Au), sign(Ctx, Ad)};
 	NewAd -> ad(Ctx, An, Au, NewAd)
     end.
 
+ad_filter(#dnsxd_rr{name = Name, type = Type}, Targets) ->
+    Hash = erlang:phash2({Name, Type}),
+    lists:member(Hash, Targets).
+
 sign(#ctx{dnssec = true, dnssec_keys = Keys} = Ctx, RR) when Keys =/= [] ->
     sign(Ctx, lists:reverse(RR), [], []);
 sign(#ctx{}, RR) -> RR.
 
-sign(#ctx{}, [], [], Processed) ->
-    Processed;
+sign(#ctx{}, [], [], Processed) -> Processed;
 sign(#ctx{} = Ctx, [], Set, Processed) ->
     SignedRRSet = sign_rrset(Ctx, Set),
     SignedRRSet ++ Processed;
@@ -242,9 +236,10 @@ sign_rrset(#ctx{dnssec_keys = Keys, zonename = SignersName}, Set) ->
 	       end, Set, Keys),
     lists:reverse(RevSet).
 
-add_nsec3(NxDom, #ctx{dnssec = true, nsec3 = #dnsxd_nsec3_param{}} = Ctx,
-	  #dns_query{} = Query, RR) ->
-    Name = dns:dname_to_lower(Query#dns_query.name),
+add_nsec3(NxDom,
+	  #ctx{dnssec = true, nsec3 = #dnsxd_nsec3_param{}, rr = CtxRR} = Ctx,
+	  #dns_query{name = NameMix}, RR) ->
+    Name = dns:dname_to_lower(NameMix),
     DName = dns:encode_dname(Name),
     if NxDom ->
 	    Types = lists:seq(1,33,3) ++ [?DNS_TYPE_RRSIG],
@@ -256,7 +251,7 @@ add_nsec3(NxDom, #ctx{dnssec = true, nsec3 = #dnsxd_nsec3_param{}} = Ctx,
 	    NSEC3Wild = make_nsec3(Ctx, false, WDName, Types),
 	    [NSEC3, NSEC3Wild | RR];
        true -> %% Name exists, but no data
-	    Types = [T || #dnsxd_rr{name = N, type = T} <- Ctx#ctx.rr,
+	    Types = [T || #dnsxd_rr{name = N, type = T} <- CtxRR,
 			  N =:= Name],
 	    NSEC3 = make_nsec3(Ctx, true, DName, Types),
 	    [NSEC3 | RR]

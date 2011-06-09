@@ -48,7 +48,7 @@ start_link() ->
 	ok ->
 	    Opts = [{timeout, Timeout}],
 	    gen_server:start_link({local, ?SERVER}, ?MODULE, [], Opts);
-	{error, Error} -> {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 update_zone(MsgCtx, Key, ZoneName, ?DNS_CLASS_IN, PreReqs, Updates) ->
@@ -132,7 +132,7 @@ handle_info(run_compact, #state{compact_pid = OldPid} = State) ->
 handle_info({Ref, {last_seq, NewSeq}}, #state{db_ref = Ref} = State) ->
     NewState = State#state{db_seq = NewSeq},
     {noreply, NewState};
-handle_info({Ref, done},
+handle_info({Ref, done} = Message,
 	    #state{db_ref = Ref, db_seq = Seq, db_lost = Lost} = State) ->
     case setup_monitor(Seq) of
 	{ok, NewRef, Seq} ->
@@ -143,7 +143,7 @@ handle_info({Ref, done},
 	    ?DNSXD_ERR("Unable to reconnect db poll:~n"
 		       "~p~n"
 		       "Retrying in 30 seconds", [Error]),
-	    {ok, _} = timer:send_after(30000, self(), {Ref, done}),
+	    {ok, _} = timer:send_after(30000, self(), Message),
 	    {noreply, State}
     end;
 handle_info({Ref, {error, Error}}, #state{db_ref = Ref} = State) ->
@@ -181,11 +181,9 @@ handle_info(Info, State) ->
     ?DNSXD_ERR("Stray message:~n~p", [Info]),
     {noreply, State}.
 
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, _State) -> ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
@@ -193,17 +191,14 @@ code_change(_OldVsn, State, _Extra) ->
 
 load_zone(ZoneName) ->
     case dnsxd_couch_zone:get(ZoneName) of
-	{ok, #dnsxd_couch_zone{} = Zone} ->
-	    insert_zone(Zone);
-	{error, Error} ->
-	    {error, Error}
+	{ok, #dnsxd_couch_zone{} = Zone} -> insert_zone(Zone);
+	{error, _Reason} = Error -> Error
     end.
 
 insert_zone(#dnsxd_couch_zone{enabled = true} = CouchZone) ->
     Zone = to_dnsxd_zone(CouchZone),
     dnsxd:reload_zone(Zone);
-insert_zone(#dnsxd_couch_zone{enabled = false}) ->
-    {error, disabled}.
+insert_zone(#dnsxd_couch_zone{enabled = false}) -> {error, disabled}.
 
 init_load_zones() ->
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
@@ -216,8 +211,7 @@ init_load_zones(DbRef, Docs) ->
 		  case dnsxd_couch_zone:get(DbRef, ZoneName) of
 		      {ok, #dnsxd_couch_zone{enabled = true} = Zone} ->
 			  ok = insert_zone(Zone);
-		      {ok, #dnsxd_couch_zone{enabled = false}} ->
-			  ok;
+		      {ok, #dnsxd_couch_zone{enabled = false}} -> ok;
 		      {error, deleted} -> ok;
 		      {error, not_zone} -> ok
 		  end
@@ -246,9 +240,7 @@ couch_dk_to_dnsxd_key(#dnsxd_couch_dk{id = Id, incept = Incept, expire = Expire,
     #dnsxd_dnssec_key{ds_id = Id, incept = Incept, expire = Expire, alg = Alg,
 		      ksk = KSK, key = Key}.
 
-cancel_timer(Ref) when is_reference(Ref) ->
-    _ = erlang:cancel_timer(Ref),
-    ok;
+cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;
 cancel_timer(undefined) -> ok.
 
 to_dnsxd_zone(#dnsxd_couch_zone{name = Name,
@@ -322,26 +314,22 @@ setup_monitor() ->
 		{ok, {DbInfo}} ->
 		    Since = get_value(<<"update_seq">>, DbInfo),
 		    setup_monitor(DbRef, Since);
-		{error, Error} ->
-		    {error, Error}
+		{error, _Reason} = Error -> Error
 	    end;
-	{error, Error} ->
-	    {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 setup_monitor(Since) ->
     case dnsxd_couch_lib:get_db() of
-	{ok, DbRef} ->
-	    setup_monitor(DbRef, Since);
-	{error, Error} ->
-	    {error, Error}
+	{ok, DbRef} -> setup_monitor(DbRef, Since);
+	{error, _Reason} = Error -> Error
     end.
 
 setup_monitor(DbRef, Since) when is_tuple(DbRef) ->
     Opts = [{since, Since}, {feed, "continuous"}, {heartbeat, true}],
     case couchbeam:changes_wait(DbRef, self(), Opts) of
 	{ok, Ref} -> {ok, Ref, Since};
-	{error, Error} -> {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 start_compact() -> spawn(fun compact/0).
@@ -359,6 +347,4 @@ compact() ->
 	    ?DNSXD_ERR("Error getting db for compaction:~n~p", [Error])
     end.
 
-get_value(Key, List) ->
-    {Key, Value} = lists:keyfind(Key, 1, List),
-    Value.
+get_value(Key, List) -> {Key, Value} = lists:keyfind(Key, 1, List), Value.

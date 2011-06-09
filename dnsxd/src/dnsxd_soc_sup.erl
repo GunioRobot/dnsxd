@@ -33,8 +33,7 @@
 %%% API
 %%%===================================================================
 
-start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+start_link() -> supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %%%===================================================================
 %%% supervisor callbacks
@@ -54,8 +53,7 @@ init([]) ->
 			    Restart, Shutdown, worker, [dnsxd_soc_server]}
 			   || IfSpec <- Interfaces ],
 	    {ok, {SupFlags, ChildSpecs}};
-	{error, Error} ->
-	    {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 %%%===================================================================
@@ -67,24 +65,19 @@ if_spec_to_name(#dnsxd_if_spec {ip = IP, port = Port, protocol = Proto}) ->
 
 build_interfaces() ->
     case dnsxd:get_env(interfaces) of
-	{ok, Interfaces} ->
-	    build_interfaces(Interfaces);
-	undefined ->
-	    {error, no_interfaces}
+	{ok, Interfaces} -> build_interfaces(Interfaces);
+	undefined -> {error, no_interfaces}
     end.
 
 build_interfaces([_|_] = Interfaces) ->
-    try lists:map(fun build_if_spec/1, Interfaces)
-    catch throw:{Reason, Term} -> {error, {Reason, Term}} end;
-build_interfaces(Term) ->
-    {error, {bad_ifspecs, Term}}.
+    try [ build_if_spec(Interface) || Interface <- Interfaces ]
+    catch throw:{_, _} = Reason -> {error, Reason} end;
+build_interfaces(Term) -> {error, {bad_ifspecs, Term}}.
 
-build_if_spec({_IP, Port, _Protocol} = Term)
-  when not is_integer(Port) ->
+build_if_spec({_IP, Port, _Protocol} = Term) when not is_integer(Port) ->
     throw({bad_port, Term});
 build_if_spec({_IP, Port, _Protocol} = Term)
-  when Port < 1 orelse Port > 65535 ->
-    throw({bad_port, Term});
+  when Port < 1 orelse Port > 65535 -> throw({bad_port, Term});
 build_if_spec({_IP, _Port, Protocol} = Term)
   when Protocol =/= udp andalso Protocol =/= tcp ->
     throw({bad_protocol, Term});
@@ -94,8 +87,6 @@ build_if_spec({IP, Port, Protocol} = Term) ->
 	    #dnsxd_if_spec{ip = ParsedIP,
 			   port = Port,
 			   protocol = Protocol};
-	_ ->
-	    throw({bad_ip, Term})
+	_ -> throw({bad_ip, Term})
     end;
-build_if_spec(Term) ->
-    throw({bad_ifspec, Term}).
+build_if_spec(Term) -> throw({bad_ifspec, Term}).

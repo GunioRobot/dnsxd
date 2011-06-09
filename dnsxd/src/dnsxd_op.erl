@@ -34,8 +34,7 @@ dispatch(MsgCtx, ReqMsgBin) when is_binary(ReqMsgBin) ->
 	    case get_tsig(ReqMsg) of
 		#dns_rr{} = TSIG ->
 		    verify_tsig(MsgCtx0, ReqMsg, TSIG, ReqMsgBin);
-		undefined ->
-		    dispatch(MsgCtx0, ReqMsg)
+		undefined -> dispatch(MsgCtx0, ReqMsg)
 	    end
     catch Class:Exception ->
 	    ?DNSXD_ERR(
@@ -76,16 +75,14 @@ handler(#dns_message{oc = 'query', qc = 1} = Msg) ->
 	true -> fun dnsxd_op_llq:handle/2;
 	false -> fun dnsxd_op_query:handle/2
     end;
-handler(#dns_message{oc = 'update', qc = 1}) ->
-    fun dnsxd_op_update:handle/2;
-handler(_) ->
-    fun dnsxd_op_notimp:handle/2.
+handler(#dns_message{oc = 'update', qc = 1}) -> fun dnsxd_op_update:handle/2;
+handler(_) -> fun dnsxd_op_notimp:handle/2.
 
-set_max_size(MsgCtx, #dns_message{} = ReqMsg) ->
+set_max_size(MsgCtx, #dns_message{additional = Additional}) ->
     case dnsxd_op_ctx:protocol(MsgCtx) of
 	udp ->
 	    MaxSize = max_udp_payload(),
-	    case ReqMsg#dns_message.additional of
+	    case Additional of
 		[#dns_optrr{udp_payload_size = ClientSize}|_]
 		  when is_integer(ClientSize) ->
 		    Size = if ClientSize =< 512 -> 512;

@@ -53,17 +53,14 @@
 %%% API
 %%%===================================================================
 
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link() -> gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-load_zone(#dnsxd_zone{} = Zone) ->
-    gen_server:call(?SERVER, {load_zone, Zone}).
+load_zone(#dnsxd_zone{} = Zone) -> gen_server:call(?SERVER, {load_zone, Zone}).
 
 reload_zone(#dnsxd_zone{} = Zone) ->
     gen_server:call(?SERVER, {reload_zone, Zone}).
 
-delete_zone(ZoneName) ->
-    gen_server:call(?SERVER, {delete_zone, ZoneName}).
+delete_zone(ZoneName) -> gen_server:call(?SERVER, {delete_zone, ZoneName}).
 
 zone_for_name(Name) ->
     Labels = lists:reverse(dns:dname_to_labels(dns:dname_to_lower(Name))),
@@ -79,9 +76,8 @@ zone_for_name(LastDom, PrevHash, [Label|Labels]) ->
 	[#index{hash = Hash, soa = true, count = Count, domain = Dom}]
 	  when Count > 0 ->
 	    zone_for_name(Dom, Hash, Labels);
-	_ ->
-	    if LastDom =:= <<>> -> undefined;
-	       true -> LastDom end
+	_ when LastDom =:= <<>> -> undefined;
+	_ -> LastDom
     end.
 
 get_zone(Name) ->
@@ -169,14 +165,13 @@ handle_call({new_llq, Pid, MsgCtx,
     Opts = dnsxd:llq_opts(),
     MaxLLQ = proplists:get_value(max_llq, Opts, 500),
     Reply = case Count >= MaxLLQ of
-		true ->
-		    {ok, servfull};
+		true -> {ok, servfull};
 		false ->
 		    case find_zone(Name) of
-			#dnsxd_zone{name = ZoneName} = Zone ->
+			#dnsxd_zone{name = ZoneName,
+				    dnssec_enabled = DNSSECEnabled} ->
 			    Id = new_llqid(),
-			    DNSSEC = ClientDNSSEC andalso
-				Zone#dnsxd_zone.dnssec_enabled,
+			    DNSSEC = ClientDNSSEC andalso DNSSECEnabled,
 			    {ok, LLQPid} = dnsxd_llq_server:start_link(
 					  Pid, Id, ZoneName, MsgCtx, Q, DNSSEC),
 			    LLQRef = #llq_ref{id = Id, pid = LLQPid,
@@ -184,8 +179,7 @@ handle_call({new_llq, Pid, MsgCtx,
 			    ets:insert(?TAB_LLQ, LLQRef),
 			    ok = dnsxd_llq_server:handle_msg(LLQPid, MsgCtx,
 							     Msg);
-			undefined ->
-			    {ok, bad_zone}
+			undefined -> {ok, bad_zone}
 		    end
 	    end,
     {reply, Reply, State};
@@ -219,18 +213,15 @@ handle_info(Info, State) ->
     ?DNSXD_ERR("Stray message:~n~p", [Info]),
     {noreply, State}.
 
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, _State) -> ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-zone_loaded(ZoneName) ->
-    ets:member(?TAB_CAT, ZoneName).
+zone_loaded(ZoneName) -> ets:member(?TAB_CAT, ZoneName).
 
 insert_zone(#dnsxd_zone{name = ZoneName} = Zone) ->
     AlreadyLoaded = zone_loaded(ZoneName),
@@ -307,8 +298,7 @@ remove_from_index(ZoneName) ->
 	  when Count > 1 ->
 	    NewIndex = OldIndex#index{count = Count - 1, soa = false},
 	    true = ets:insert(?TAB_INDEX, NewIndex);
-	[_] ->
-	    true = ets:delete(?TAB_INDEX, SOAHash)
+	[_] -> true = ets:delete(?TAB_INDEX, SOAHash)
     end,
     lists:foreach(
       fun(<<>>) -> ok;
@@ -341,6 +331,4 @@ new_llqid() ->
 	false -> Id
     end.
 
-cancel_timer(Ref) when is_reference(Ref) ->
-    _ = erlang:cancel_timer(Ref),
-    ok.
+cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok.

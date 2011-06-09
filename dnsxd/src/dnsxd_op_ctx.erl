@@ -46,9 +46,7 @@
 %%%===================================================================
 
 new_udp(Socket, SrcIP, SrcPort, DstIP, DstPort) ->
-    Ctx = #dnsxd_op_ctx{protocol = udp,
-			src_ip = SrcIP,
-			 src_port = SrcPort},
+    Ctx = #dnsxd_op_ctx{protocol = udp, src_ip = SrcIP, src_port = SrcPort},
     new(Ctx, Socket, DstIP, DstPort).
 
 new_tcp(Socket, DstIP, DstPort) ->
@@ -56,9 +54,7 @@ new_tcp(Socket, DstIP, DstPort) ->
     new(Ctx, Socket, DstIP, DstPort).
 
 new(#dnsxd_op_ctx{} = Ctx, Socket, DstIP, DstPort) ->
-    Ctx#dnsxd_op_ctx{socket = Socket,
-		      dst_ip = DstIP,
-		      dst_port = DstPort}.
+    Ctx#dnsxd_op_ctx{socket = Socket, dst_ip = DstIP, dst_port = DstPort}.
 
 protocol(#dnsxd_op_ctx{protocol = Protocol}) -> Protocol.
 
@@ -68,16 +64,11 @@ src(#dnsxd_op_ctx{protocol = tcp, socket = Socket}) ->
     {ok, {_SrcIP, _SrcPort} = Src} = inet:peername(Socket),
     Src.
 
-src_ip(#dnsxd_op_ctx{} = Ctx) ->
-    {SrcIP, _SrcPort} = src(Ctx),
-    SrcIP.
+src_ip(#dnsxd_op_ctx{} = Ctx) -> {SrcIP, _SrcPort} = src(Ctx), SrcIP.
 
-src_port(#dnsxd_op_ctx{} = Ctx) ->
-    {_SrcIP, SrcPort} = src(Ctx),
-    SrcPort.
+src_port(#dnsxd_op_ctx{} = Ctx) -> {_SrcIP, SrcPort} = src(Ctx), SrcPort.
 
-dst(#dnsxd_op_ctx{dst_ip = DstIP, dst_port = DstPort}) ->
-    {DstIP, DstPort}.
+dst(#dnsxd_op_ctx{dst_ip = DstIP, dst_port = DstPort}) -> {DstIP, DstPort}.
 
 dst_ip(#dnsxd_op_ctx{dst_ip = DstIP}) -> DstIP.
 

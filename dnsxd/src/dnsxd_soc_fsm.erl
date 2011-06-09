@@ -70,8 +70,7 @@ init([{Pid, {IP, Port, Protocol, Socket}}]) ->
 
 udp_active(timeout, #state{loaded = true} = State) ->
     {next_state, udp_active, State#state{loaded = false}};
-udp_active(timeout, #state{loaded = false} = State) ->
-    {stop, normal, State}.
+udp_active(timeout, #state{loaded = false} = State) -> {stop, normal, State}.
 
 tcp_active(timeout, #state{socket = Socket} = State) ->
     ok = gen_tcp:close(Socket),
@@ -85,8 +84,7 @@ tcp_accept(timeout, #state{parent = Parent, socket = Socket} = State) ->
 	    NewState = State#state{socket = NewSocket},
 	    Timeout = tcp_timeout(),
 	    {next_state, tcp_active, NewState, Timeout};
-	{error, timeout} ->
-	    {next_state, tcp_accept, State, 0}
+	{error, timeout} -> {next_state, tcp_accept, State, 0}
     end.
 
 udp_active(Event, _From, State) ->
@@ -144,11 +142,9 @@ handle_info(Info, StateName, State) ->
     ?DNSXD_ERR("Stray message in state ~s:~n~p", [StateName, Info]),
     {next_state, StateName, State}.
 
-terminate(_Reason, _StateName, _State) ->
-    ok.
+terminate(_Reason, _StateName, _State) -> ok.
 
-code_change(_OldVsn, StateName, State, _Extra) ->
-    {ok, StateName, State}.
+code_change(_OldVsn, StateName, State, _Extra) -> {ok, StateName, State}.
 
 %%%===================================================================
 %%% Internal functions
@@ -179,8 +175,7 @@ dispatch_msgbin(#state{protocol = Protocol} = State, Context, MsgBin)
   when is_binary(MsgBin) ->
     ok = dnsxd_op:dispatch(Context, MsgBin),
     case Protocol of
-	udp ->
-	    ok;
+	udp -> ok;
 	tcp ->
 	    Timeout = tcp_timeout(),
 	    {ok, {State, Timeout}}
@@ -191,6 +186,5 @@ tcp_timeout() ->
 	{ok, TimeoutSecs}
 	  when is_integer(TimeoutSecs) andalso TimeoutSecs > 0 ->
 	    TimeoutSecs * 1000;
-	_ ->
-	    ?DEFAULT_TIMEOUT * 1000
+	_ -> ?DEFAULT_TIMEOUT * 1000
     end.

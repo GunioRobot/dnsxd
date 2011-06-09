@@ -32,7 +32,7 @@
 get(ZoneName) ->
     case dnsxd_couch_lib:get_db() of
 	{ok, DbRef} -> get(DbRef, ZoneName);
-	{error, Error} -> {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 get(DbRef, ZoneName) ->
@@ -44,24 +44,21 @@ get(DbRef, ZoneName) ->
 			[] -> {ok, Zone};
 			Revs -> get(DbRef, ZoneName, Zone, Revs)
 		    end;
-		{error, Error} ->
-		    {error, Error}
+		{error, _Reason} = Error -> Error
 	    end;
-	{error, Error} ->
-	    {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
-get(DbRef, ZoneName, Zone, Revs) ->
-    get(DbRef, ZoneName, Zone, Revs, []).
+get(DbRef, ZoneName, Zone, Revs) -> get(DbRef, ZoneName, Zone, Revs, []).
 
 get(DbRef, _ZoneName, Zone, [], DelDocs) ->
     case put(DbRef, Zone) of
 	ok ->
 	    case couchbeam:delete_docs(DbRef, DelDocs) of
 		{ok, _} -> {ok, Zone};
-		{error, Error} -> {error, Error}
+		{error, _Reason} = Error -> Error
 	    end;
-	{error, Error} -> {error, Error}
+	{error, _Reason} = Error -> Error
     end;
 get(DbRef, ZoneName, Zone, [Rev|Revs], DelDocs) ->
     case couchbeam:open_doc(DbRef, ZoneName, [{rev, Rev}]) of
@@ -75,8 +72,7 @@ get(DbRef, ZoneName, Zone, [Rev|Revs], DelDocs) ->
 		    NewDelDocs = [Doc|DelDocs],
 		    get(DbRef, ZoneName, Zone, Revs, NewDelDocs)
 	    end;
-	{error, Error} ->
-	    {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 put(#dnsxd_couch_zone{} = Zone) ->
@@ -87,9 +83,9 @@ put(#dnsxd_couch_zone{} = Zone) ->
 		{ok, _} ->
 		    ?DNSXD_COUCH_SERVER ! wrote_zone,
 		    ok;
-		{error, Error} -> {error, Error}
+		{error, _Reason} = Error -> Error
 	    end;
-	{error, Error} -> {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 update(_MsgCtx, Key, ZoneName, PreReqs, Updates) ->
@@ -98,8 +94,7 @@ update(_MsgCtx, Key, ZoneName, PreReqs, Updates) ->
 	    update(Zone, Key, PreReqs, Updates);
 	{ok, #dnsxd_couch_zone{enabled = false}} ->
 	    {error, disabled};
-	{error, Error} ->
-	    {error, Error}
+	{error, _Reason} = Error -> Error
     end.
 
 update(#dnsxd_couch_zone{rr = RRs} = Zone, Key, PreReqs, Updates) ->
@@ -125,9 +120,9 @@ update(#dnsxd_couch_zone{rr = RRs} = Zone, Key, PreReqs, Updates) ->
 	    case put(NewZone) of
 		ok ->
 		    {ok, noerror};
-		{error, Error} ->
+		{error, _Reason} = Error ->
 		    timer:sleep(50),
-		    {error, Error}
+		    Error
 	    end;
 	Rcode when is_atom(Rcode) -> {ok, Rcode}
     end.
@@ -230,52 +225,46 @@ update_rr(Key, Private, [{add, Name, Type, TTL, Data, LeaseLength}|Updates],
 reap(Now, RRs) when is_list(RRs) ->
     %% todo: should be configurable
     TombstonePeriod = 48 * 60 * 60,
-    TombstonedRRs = [fun(#dnsxd_couch_rr{expire = Expires} = RR)
-			   when is_integer(Expires) andalso Expires < Now ->
-			     Tombstone = Expires + TombstonePeriod,
-			     RR#dnsxd_couch_rr{tombstone = Tombstone};
-			(#dnsxd_couch_rr{} = RR) -> RR
-		     end(CouchRR) || CouchRR <- RRs],
+    TombstonedRRs = [ add_tombstone(CouchRR, Now, TombstonePeriod)
+		      || CouchRR <- RRs],
     [RR || RR <- TombstonedRRs, reap(Now, RR)];
 reap(Now, #dnsxd_couch_rr{tombstone = Tombstone})
   when is_integer(Tombstone) andalso Tombstone < Now -> false;
 reap(_Now, #dnsxd_couch_rr{}) -> true.
 
-get_conflicts({DocProps}) ->
-    get_conflicts(DocProps);
-get_conflicts(DocProps) ->
-    get_value(<<"_conflicts">>, DocProps, []).
+add_tombstone(#dnsxd_couch_rr{expire = Expires} = RR, Now, TombstonePeriod)
+  when is_integer(Expires) andalso Expires < Now ->
+    Tombstone = Expires + TombstonePeriod,
+    RR#dnsxd_couch_rr{tombstone = Tombstone};
+add_tombstone(#dnsxd_couch_rr{} = RR, _Now, _TombstonePeriod) -> RR.
 
-decode_doc({DocProps}) ->
-    decode_doc(DocProps);
+get_conflicts({DocProps}) -> get_conflicts(DocProps);
+get_conflicts(DocProps) -> get_value(<<"_conflicts">>, DocProps, []).
+
+decode_doc({DocProps}) -> decode_doc(DocProps);
 decode_doc(DocProps) ->
     case proplists:get_bool(<<"_deleted">>, DocProps) of
-	true ->
-	    {error, deleted};
+	true -> {error, deleted};
 	false ->
 	    case get_value(?ERL_REC_TAG, DocProps) of
 		<<"dnsxd_couch_zone">> ->
 		    #dnsxd_couch_zone{} = decode(DocProps);
-		_ ->
-		    {error, not_zone}
+		_ -> {error, not_zone}
 	    end
     end.
 
 decode({List}) when is_list(List) -> decode(List);
 decode(List) when is_list(List) ->
     case get_value(?ERL_REC_TAG, List) of
-	undefined ->
-	    List;
+	undefined -> List;
 	TagBin ->
 	    Tag = binary_to_existing_atom(TagBin, latin1),
 	    Values = [ decode(Tag, Field, List) || Field <- fields(Tag) ],
 	    list_to_tuple([Tag|Values])
     end.
 
-decode(dnsxd_couch_zone, name, List) ->
-    get_value(<<"_id">>, List);
-decode(dnsxd_couch_zone, rev, List) ->
-    get_value(<<"_rev">>, List);
+decode(dnsxd_couch_zone, name, List) -> get_value(<<"_id">>, List);
+decode(dnsxd_couch_zone, rev, List) -> get_value(<<"_rev">>, List);
 decode(Tag, Field, List) ->
     Default = get_default(Tag, Field),
     case get_value(atom_to_binary(Field, latin1), List, Default) of
@@ -308,8 +297,7 @@ decode(Tag, Field, List) ->
 ?FIELDS(dnsxd_couch_nsec3param);
 fields(Tag) -> dns_record_info:fields(Tag).
 
-values(Rec) when is_tuple(Rec) ->
-    tl(tuple_to_list(Rec)).
+values(Rec) when is_tuple(Rec) -> tl(tuple_to_list(Rec)).
 
 get_default(Tag, Field)
   when Tag =:= dnsxd_couch_zone orelse
@@ -337,12 +325,9 @@ encode(Rec) when is_tuple(Rec) ->
 encode(undefined) -> null;
 encode(null) -> null.
 
-encode_zipper(dnsxd_couch_zone, name, Name) ->
-    {<<"_id">>, Name};
-encode_zipper(dnsxd_couch_zone, rev, undefined) ->
-    undefined;
-encode_zipper(dnsxd_couch_zone, rev, Rev) ->
-    {<<"_rev">>, Rev};
+encode_zipper(dnsxd_couch_zone, name, Name) -> {<<"_id">>, Name};
+encode_zipper(dnsxd_couch_zone, rev, undefined) -> undefined;
+encode_zipper(dnsxd_couch_zone, rev, Rev) -> {<<"_rev">>, Rev};
 encode_zipper(dnsxd_couch_zone, rr, RRs) ->
     {<<"rr">>, [ encode(RR) || RR <- RRs ]};
 encode_zipper(dnsxd_couch_zone, soa_param, SOAParam) ->
@@ -353,18 +338,15 @@ encode_zipper(dnsxd_couch_zone, tsig_keys, Keys) ->
     {<<"tsig_keys">>, [ encode(Key) || Key <- Keys ]};
 encode_zipper(dnsxd_couch_zone, dnssec_keys, Keys) ->
     {<<"dnssec_keys">>, [ encode(Key) || Key <- Keys ]};
-encode_zipper(dnsxd_couch_dk, data, Key) ->
-    {<<"data">>, encode(Key)};
+encode_zipper(dnsxd_couch_dk, data, Key) -> {<<"data">>, encode(Key)};
 encode_zipper(dnsxd_couch_rr, data, Bin) when is_binary(Bin) ->
     {<<"data">>, base64:encode(Bin)};
 encode_zipper(dnsxd_couch_rr, data, Data) when is_tuple(Data) ->
     {<<"data">>, encode(Data)};
 encode_zipper(_Tag, history, History) ->
     {<<"history">>, [ encode(Entry) || Entry <- History ]};
-encode_zipper(_Tag, Key, undefined) ->
-    {atom_to_binary(Key, latin1), null};
-encode_zipper(_Tag, Key, Value) ->
-    {atom_to_binary(Key, latin1), Value}.
+encode_zipper(_Tag, Key, undefined) -> {atom_to_binary(Key, latin1), null};
+encode_zipper(_Tag, Key, Value) -> {atom_to_binary(Key, latin1), Value}.
 
 get_value(Key, List) -> get_value(Key, List, undefined).
 

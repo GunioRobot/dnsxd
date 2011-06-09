@@ -76,12 +76,11 @@ init(#dnsxd_if_spec{ip = IP,
 			   idle = Workers,
 			   idle_c = length(Workers),
 			   min_workers = MinWorkers,
-			   max_workers = MaxWorkers
-			  },
+			   max_workers = MaxWorkers},
 	    {ok, State};
-	{error, Error} ->
-	    ?DNSXD_ERR("listen failed:~n~p~nArgs:~p~n", [Error, IfSpec]),
-	    {stop, {error, Error}}
+	{error, Reason} = Error ->
+	    ?DNSXD_ERR("listen failed:~n~p~nArgs:~p~n", [Reason, IfSpec]),
+	    {stop, Error}
     end.
 
 handle_call(Request, _From, State) ->
@@ -97,8 +96,7 @@ handle_info({'EXIT', Pid, _Reason}, #state{} = State) ->
 	{ok, TmpState} ->
 	    {ok, NewState} = ensure_min_workers(TmpState),
 	    {noreply, NewState};
-	{error, bad_pid} ->
-	    {noreply, State}
+	{error, bad_pid} -> {noreply, State}
     end;
 handle_info({loaded, _Pid}, #state{protocol = udp} = State) ->
     {ok, NewState} = add_worker(State),
@@ -108,8 +106,7 @@ handle_info({accepted, Pid}, #state{protocol = tcp} = State) ->
 	{ok, TmpState} ->
 	    {ok, NewState} = ensure_min_workers(TmpState),
 	    {noreply, NewState};
-	{error, bad_pid} ->
-	    {noreply, State}
+	{error, bad_pid} -> {noreply, State}
     end;
 handle_info({udp, Socket, _, _, _} = Msg,
 	    #state{socket = Socket, idle = [Worker|Workers]} = State) ->
@@ -122,11 +119,9 @@ handle_info(Info, State) ->
     ?DNSXD_ERR("Stray message:~n~p", [Info]),
     {noreply, State}.
 
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, _State) -> ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
@@ -138,7 +133,7 @@ listen(IP, Port, Protocol) when is_integer(Port) ->
 listen(Port, udp, BaseOpts) ->
     Opts = [{active, once}, binary|BaseOpts],
     case gen_udp:open(Port, Opts) of
-	{error, eacces} ->
+	{error, eacces} = ErrEacces  ->
 	    case use_procket() of
 		true ->
 		    case procket_open(Port, udp, dgram) of
@@ -148,16 +143,14 @@ listen(Port, udp, BaseOpts) ->
 			Error ->
 			    {error, {procket_bind_failed, Error}}
 		    end;
-		false ->
-		    {error, eacces}
+		false -> ErrEacces
 	    end;
-	Other ->
-	    Other
+	Other -> Other
     end;
 listen(Port, tcp, BaseOpts) ->
     Opts = ?TCP_OPTS ++ BaseOpts,
     case gen_tcp:listen(Port, Opts) of
-	{error, eacces} ->
+	{error, eacces} = ErrEacces ->
 	    case use_procket() of
 		true ->
 		    case procket_open(Port, tcp, stream) of
@@ -167,11 +160,9 @@ listen(Port, tcp, BaseOpts) ->
 			Error ->
 			    {error, {procket_bind_failed, Error}}
 		    end;
-		false ->
-		    {error, eacces}
+		false -> ErrEacces
 	    end;
-	Other ->
-	    Other
+	Other -> Other
     end.
 
 remove_worker(Pid, #state{active = Active,
@@ -181,10 +172,8 @@ remove_worker(Pid, #state{active = Active,
     case lists:delete(Pid, Active) of
 	Active ->
 	    case lists:delete(Pid, Idle) of
-		Idle ->
-		    {error, bad_pid};
-		NewIdle ->
-		    {ok, State#state{idle = NewIdle, idle_c = IdleC - 1}}
+		Idle -> {error, bad_pid};
+		NewIdle -> {ok, State#state{idle = NewIdle, idle_c = IdleC - 1}}
 	    end;
 	NewActive ->
 	    {ok, State#state{active = NewActive, active_c = ActiveC - 1}}
@@ -195,8 +184,7 @@ activate_worker(Pid, #state{active = Active,
 			    idle = Idle,
 			    idle_c = IdleC} = State) ->
     case lists:delete(Pid, Idle) of
-	Idle ->
-	    {error, bad_pid};
+	Idle -> {error, bad_pid};
 	NewIdle ->
 	    NewIdleC = IdleC - 1,
 	    NewActive = [Pid|Active],
@@ -257,8 +245,7 @@ ensure_min_workers(#state{ip = IP,
 
 spawn_workers(Num, IP, Port, Protocol, Socket) ->
     spawn_workers(Num, IP, Port, Protocol, Socket, []).
-spawn_workers(0, _IP, _Port, _Protocol, _Socket, NewWorkers) ->
-    NewWorkers;
+spawn_workers(0, _IP, _Port, _Protocol, _Socket, NewWorkers) -> NewWorkers;
 spawn_workers(Num, IP, Port, Proto, Socket, Workers) ->
     {ok, Pid} = dnsxd_soc_fsm:start_link({IP, Port, Proto, Socket}),
     NewNum = Num - 1,
@@ -267,8 +254,7 @@ spawn_workers(Num, IP, Port, Proto, Socket, Workers) ->
 
 use_procket() ->
     case dnsxd:get_env(procket) of
-	{ok, Props} when is_list(Props) ->
-	    proplists:get_bool(enabled, Props);
+	{ok, Props} when is_list(Props) -> proplists:get_bool(enabled, Props);
 	_ -> false
     end.
 

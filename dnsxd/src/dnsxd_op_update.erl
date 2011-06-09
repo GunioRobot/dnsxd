@@ -44,12 +44,10 @@ handle(MsgCtx, #dns_message{questions = [#dns_query{name = ZoneNameM,
 			true ->
 			    UL = #dns_opt_ul{lease = Lease},
 			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [UL|Props]);
-			false ->
-			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props)
+			false -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props)
 		    end
 	    end;
-	_ ->
-	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, notauth}])
+	_ -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, notauth}])
     end;
 handle(MsgCtx, #dns_message{} = ReqMsg) ->
     dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]).
@@ -72,18 +70,13 @@ run(MsgCtx,
 	    case lists:all(Fun, PreReqs) of
 		true ->
 		    case lists:all(Fun, Updates) of
-			true ->
-			    update(MsgCtx, ReqMsg, Key);
-			false ->
-			    {refused, undefined}
+			true -> update(MsgCtx, ReqMsg, Key);
+			false -> {refused, undefined}
 		    end;
-		false ->
-		    {refused, undefined}
+		false -> {refused, undefined}
 	    end;
-	ok ->
-	    update(MsgCtx, ReqMsg, Key);
-	RC ->
-	    {RC, undefined}
+	ok -> update(MsgCtx, ReqMsg, Key);
+	RC -> {RC, undefined}
     end.
 
 update(MsgCtx,
@@ -156,12 +149,10 @@ rr_to_update(_Class, _LeaseLength,
 		     type = Type,
 		     data = Data}) ->
     {delete, dns:dname_to_lower(Name), Type, Data};
-rr_to_update(_Class, _LeaseLength, _RR) ->
-    throw(formerr).
+rr_to_update(_Class, _LeaseLength, _RR) -> throw(formerr).
 
 is_dnssd_rr(_ZoneNameLabels, KeyName, #dns_rr{type = Type, name = KeyName})
-  when Type =:= aaaa orelse Type =:= a ->
-    true;
+  when Type =:= aaaa orelse Type =:= a -> true;
 is_dnssd_rr(_ZoneNameLabels, KeyName, #dns_rr{type = Type, name = Name})
   when Type =:= aaaa orelse Type =:= a ->
     dns:dname_to_lower(Name) =:= dns:dname_to_lower(KeyName);
@@ -201,28 +192,22 @@ prescan(_ZoneName, [#dns_rr{type = Type}|_])
        Type =:= maila orelse
        Type =:= mailb -> formerr;
 prescan(_ZoneName, [#dns_rr{class = Class, type = ?DNS_TYPE_ANY}|_])
-  when Class =:= in orelse Class =:= none ->
-    formerr;
+  when Class =:= in orelse Class =:= none -> formerr;
 prescan(_ZoneName, [#dns_rr{class = ?DNS_CLASS_ANY, ttl = TTL, data = Data}|_])
-  when TTL =/= 0 orelse Data =/= <<>> ->
-    formerr;
+  when TTL =/= 0 orelse Data =/= <<>> -> formerr;
 prescan(_ZoneName, [#dns_rr{class = ?DNS_CLASS_NONE, ttl = TTL}|_])
-  when TTL =/= 0 ->
-    formerr;
-prescan(ZoneName, [#dns_rr{name = ZoneName}|RRs]) ->
-    prescan(ZoneName, RRs);
+  when TTL =/= 0 -> formerr;
+prescan(ZoneName, [#dns_rr{name = ZoneName}|RRs]) -> prescan(ZoneName, RRs);
 prescan(ZoneName, [#dns_rr{name = NameM}|RRs]) ->
     Name = dns:dname_to_lower(NameM),
     NameSize = byte_size(Name),
     ZoneNameSize = byte_size(ZoneName),
     ChildLabelsSize = NameSize - ZoneNameSize - 1,
     case Name of
-	ZoneName ->
-	    prescan(ZoneName, RRs);
+	ZoneName -> prescan(ZoneName, RRs);
 	<<_:ChildLabelsSize/binary, $., ZoneName/binary>> ->
 	    prescan(ZoneName, RRs);
-	_ ->
-	    notzone
+	_ -> notzone
     end.
 
 has_ul(#dns_message{additional = [#dns_optrr{data = Data}|_]}) ->

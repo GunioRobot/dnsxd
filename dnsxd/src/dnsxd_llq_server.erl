@@ -56,8 +56,7 @@
 start_link(Pid, Id, ZoneName, MsgCtx, Q, DNSSEC) ->
     gen_server:start_link(?MODULE, [Pid, Id, ZoneName, MsgCtx, Q, DNSSEC], []).
 
-handle_msg(Pid, MsgCtx, Message) ->
-    gen_server:call(Pid, {MsgCtx, Message}).
+handle_msg(Pid, MsgCtx, Message) -> gen_server:call(Pid, {MsgCtx, Message}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -90,11 +89,12 @@ handle_call({MsgCtx,
 						   opcode = setup,
 						   leaselife = ReqLength,
 						   id = 0} = LLQ]} = OptRR]
-	      } = Msg}, _From, #state{id = Id, timer_ref = Ref} = State) ->
+	      } = Msg}, _From,
+	    #state{id = Id, timer_ref = Ref, dnssec = DNSSEC} = State) ->
     ok = cancel_timer(Ref),
     Length = new_leaselength(ReqLength),
     RespLLQ = LLQ#dns_opt_llq{id = Id, leaselife = Length},
-    RespOptRR = OptRR#dns_optrr{dnssec = State#state.dnssec, data = [RespLLQ]},
+    RespOptRR = OptRR#dns_optrr{dnssec = DNSSEC, data = [RespLLQ]},
     Reply = Msg#dns_message{qr = true, additional = [RespOptRR]},
     ReplyBin = dns:encode_message(Reply),
     ok = dnsxd_op_ctx:send(MsgCtx, ReplyBin),
@@ -111,13 +111,14 @@ handle_call({MsgCtx,
 						   opcode = setup,
 						   leaselife = ReqLength,
 						   id = Id} = LLQ]} = OptRR]
-	      } = Msg}, _From, #state{id = Id, q = Q} = State) ->
-    ZoneName = State#state.zonename,
-    ok = cancel_timer(State#state.timer_ref),
+	      } = Msg}, _From,
+	    #state{id = Id, q = Q, dnssec = DNSSEC, timer_ref = TimerRef,
+		   zonename = ZoneName} = State) ->
+    ok = cancel_timer(TimerRef),
     Length = new_leaselength(ReqLength),
     RespLLQ = LLQ#dns_opt_llq{id = Id, leaselife = Length},
-    RespOptRR = OptRR#dns_optrr{dnssec = State#state.dnssec, data = [RespLLQ]},
-    {Answers, Changes} = answer(ZoneName, Q, State#state.dnssec),
+    RespOptRR = OptRR#dns_optrr{dnssec = DNSSEC, data = [RespLLQ]},
+    {Answers, Changes} = answer(ZoneName, Q, DNSSEC),
     AnC = length(Changes),
     Reply = Msg#dns_message{qr = true, anc = AnC, answers = Changes,
 			    additional = [RespOptRR]},
@@ -135,8 +136,9 @@ handle_call({MsgCtx,
 						   opcode = refresh,
 						   leaselife = 0,
 						   id = Id}]}]
-	      } = Msg}, _From, #state{id = Id, q = Q} = State) ->
-    ok = cancel_timer(State#state.timer_ref),
+	      } = Msg}, _From,
+	    #state{id = Id, q = Q, timer_ref = TimerRef} = State) ->
+    ok = cancel_timer(TimerRef),
     Reply = Msg#dns_message{qr = true},
     ReplyBin = dns:encode_message(Reply),
     ok = dnsxd_op_ctx:send(MsgCtx, ReplyBin),
@@ -150,11 +152,12 @@ handle_call({MsgCtx,
 						   leaselife = ReqLength,
 						   id = Id} = LLQ]} = OptRR]
 	      } = Msg}, _From,
-	    #state{id = Id, q = Q, pmsg = undefined} = State) ->
-    ok = cancel_timer(State#state.timer_ref),
+	    #state{id = Id, q = Q, pmsg = undefined, dnssec = DNSSEC,
+		   timer_ref = TimerRef} = State) ->
+    ok = cancel_timer(TimerRef),
     Length = new_leaselength(ReqLength),
     RespLLQ = LLQ#dns_opt_llq{id = Id, leaselife = Length},
-    RespOptRR = OptRR#dns_optrr{dnssec = State#state.dnssec, data = [RespLLQ]},
+    RespOptRR = OptRR#dns_optrr{dnssec = DNSSEC, data = [RespLLQ]},
     Reply = Msg#dns_message{qr = true, additional = [RespOptRR]},
     ReplyBin = dns:encode_message(Reply),
     ok = dnsxd_op_ctx:send(MsgCtx, ReplyBin),
@@ -169,10 +172,11 @@ handle_call({MsgCtx,
 						   opcode = refresh,
 						   leaselife = ReqLength,
 						   id = Id} = LLQ]} = OptRR]
-	      } = Msg}, _From, #state{id = Id, q = Q} = State) ->
+	      } = Msg}, _From,
+	    #state{id = Id, q = Q, dnssec = DNSSEC} = State) ->
     Length = new_leaselength(ReqLength),
     RespLLQ = LLQ#dns_opt_llq{id = Id, leaselife = Length},
-    RespOptRR = OptRR#dns_optrr{dnssec = State#state.dnssec, data = [RespLLQ]},
+    RespOptRR = OptRR#dns_optrr{dnssec = DNSSEC, data = [RespLLQ]},
     Reply = Msg#dns_message{qr = true, additional = [RespOptRR]},
     ReplyBin = dns:encode_message(Reply),
     ok = dnsxd_op_ctx:send(MsgCtx, ReplyBin),
@@ -233,8 +237,7 @@ handle_info(keepalive, State) ->
     {noreply, NewState};
 handle_info(expire, #state{expires = Expires} = State) ->
     case dns:unix_time() > Expires of
-	true ->
-	    {stop, normal, State};
+	true -> {stop, normal, State};
 	false ->
 	    NewState = set_timer(State),
 	    {noreply, NewState}
@@ -243,30 +246,25 @@ handle_info(Info, State) ->
     ?DNSXD_ERR("Stray message:~n~p", [Info]),
     {noreply, State}.
 
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, _State) -> ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, State, _Extra) -> {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-answer(ZoneName, Query, DNSSEC) ->
-    answer(ZoneName, Query, DNSSEC, []).
+answer(ZoneName, Query, DNSSEC) -> answer(ZoneName, Query, DNSSEC, []).
 
 answer(ZoneName, Query, DNSSEC, LastAns) ->
     Zone = dnsxd:get_zone(ZoneName),
     {_RC, Ans, _Au, _Ad} = dnsxd_query:answer(Zone, Query, DNSSEC),
     CurAns = [ RR#dns_rr{ttl = undefined} || RR <- Ans ],
-    Added = [ RR#dns_rr{ttl = 1} || RR <- lists:subtract(CurAns, LastAns) ],
-    Removed =[ RR#dns_rr{ttl = -1} || RR <- lists:subtract(LastAns, CurAns) ],
+    Added = [ RR#dns_rr{ttl = 1} || RR <- CurAns -- LastAns ],
+    Removed =[ RR#dns_rr{ttl = -1} || RR <- LastAns -- CurAns ],
     {CurAns, Added ++ Removed}.
 
-cancel_timer(Ref) when is_reference(Ref) ->
-    _ = erlang:cancel_timer(Ref),
-    ok;
+cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;
 cancel_timer(_) -> ok.
 
 new_leaselength(ReqLength) when is_integer(ReqLength) ->
@@ -283,12 +281,13 @@ send_empty_update(#state{id = LLQId,
 			 msgctx = MsgCtx,
 			 active = true,
 			 timer_ref = Ref,
-			 expires = Expires} = State) ->
+			 expires = Expires,
+			 dnssec = DNSSEC} = State) ->
     ok = cancel_timer(Ref),
     LeaseLife = Expires - dns:unix_time(),
     LLQ = #dns_opt_llq{opcode = event, errorcode = noerror, id = LLQId,
 		       leaselife = LeaseLife},
-    OptRR = #dns_optrr{dnssec = State#state.dnssec, data = [LLQ]},
+    OptRR = #dns_optrr{dnssec = DNSSEC, data = [LLQ]},
     Msg = #dns_message{qr = true, aa = true,
 		       qc = 1, questions = [Q],
 		       adc = 1, additional = [OptRR]},
@@ -308,9 +307,10 @@ send_update(#state{id = LLQId,
 		   active = true,
 		   timer_ref = Ref,
 		   answers = Answers,
-		   expires = Expires} = State) ->
+		   expires = Expires,
+		   dnssec = DNSSEC} = State) ->
     ok = cancel_timer(Ref),
-    {NewAnswers, Changes} = answer(ZoneName, Q, State#state.dnssec, Answers),
+    {NewAnswers, Changes} = answer(ZoneName, Q, DNSSEC, Answers),
     LeaseLife = Expires - dns:unix_time(),
     LLQ = #dns_opt_llq{opcode = event, errorcode = noerror, id = LLQId,
 		       leaselife = LeaseLife},
@@ -358,6 +358,5 @@ get_udp_timeout() ->
     case proplists:get_value(udp_keepalive, Opts) of
 	TimeoutSecs when is_integer(TimeoutSecs) andalso TimeoutSecs >= 10 ->
 	    TimeoutSecs * 1000;
-	_ ->
-	    ?DEFAULT_UDP_KEEPALIVE * 1000
+	_ -> ?DEFAULT_UDP_KEEPALIVE * 1000
     end.

@@ -38,10 +38,8 @@ handle(MsgCtx, #dns_message{qc = 1,
 	    Props = [{rc, RC}, {dnssec, DNSSEC}, aa,
 		     {an, An}, {au, Au}, {ad, Ad}],
 	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props);
-	_ ->
-	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}])
+	_ -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}])
     end.
 
-do_dnssec(#dns_message{additional=[#dns_optrr{dnssec = DNSSEC}|_]}) ->
-    DNSSEC;
+do_dnssec(#dns_message{additional=[#dns_optrr{dnssec = DNSSEC}|_]}) -> DNSSEC;
 do_dnssec(#dns_message{}) -> false.

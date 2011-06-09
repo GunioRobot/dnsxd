@@ -49,8 +49,7 @@ init([]) ->
 		    ModSpec = {Mod, {Mod, start_link, []}, Restart, Shutdown,
 			       supervise_type(Mod), [Mod]},
 		    [DsSpec, ModSpec, SocSpec];
-		false ->
-		    [DsSpec, SocSpec]
+		false -> [DsSpec, SocSpec]
 	    end,
     {ok, {SupFlags, Specs}}.
 
@@ -63,8 +62,7 @@ should_supervise(Mod) ->
 
 supervise_type(Mod) ->
     case is_supervisor(Mod) of
-	true ->
-	    supervisor;
+	true -> supervisor;
 	false ->
 	    true = is_gen_server(Mod),
 	    worker

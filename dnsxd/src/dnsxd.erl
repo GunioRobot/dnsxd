@@ -75,7 +75,7 @@ get_env(Key, Default) ->
 	undefined when Default =/= undefiend ->
 	    {ok, Default};
 	undefined -> undefined;
-	{ok, Value} -> {ok, Value}
+	{ok, _Value} = Result -> Result
     end.
 
 set_env(Key, Value) -> application:set_env(dnsxd, Key, Value).
@@ -107,29 +107,20 @@ datastore_opts() ->
 	_ -> throw({bad_config, datastore_opts})
     end.
 
-zone_loaded(ZoneName) ->
-    dnsxd_ds_server:zone_loaded(ZoneName).
+zone_loaded(ZoneName) -> dnsxd_ds_server:zone_loaded(ZoneName).
 
-find_zone(Name) ->
-    dnsxd_ds_server:find_zone(Name).
+find_zone(Name) -> dnsxd_ds_server:find_zone(Name).
 
-get_zone(ZoneName) ->
-    dnsxd_ds_server:get_zone(ZoneName).
+get_zone(ZoneName) -> dnsxd_ds_server:get_zone(ZoneName).
 
-load_zone(Zone) ->
-    dnsxd_ds_server:load_zone(Zone).
+load_zone(Zone) -> dnsxd_ds_server:load_zone(Zone).
 
-reload_zone(Zone) ->
-    dnsxd_ds_server:reload_zone(Zone).
+reload_zone(Zone) -> dnsxd_ds_server:reload_zone(Zone).
 
-delete_zone(ZoneName) ->
-    dnsxd_ds_server:delete_zone(ZoneName).
+delete_zone(ZoneName) -> dnsxd_ds_server:delete_zone(ZoneName).
 
-get_key(KeyName) ->
-    dnsxd_ds_server:get_key(KeyName).
+get_key(KeyName) -> dnsxd_ds_server:get_key(KeyName).
 
-new_llq(Pid, MsgCtx, Msg) ->
-    dnsxd_ds_server:new_llq(Pid, MsgCtx, Msg).
+new_llq(Pid, MsgCtx, Msg) -> dnsxd_ds_server:new_llq(Pid, MsgCtx, Msg).
 
-msg_llq(MsgCtx, Msg) ->
-    dnsxd_ds_server:msg_llq(MsgCtx, Msg).
+msg_llq(MsgCtx, Msg) -> dnsxd_ds_server:msg_llq(MsgCtx, Msg).

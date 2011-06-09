@@ -45,8 +45,7 @@ handle(MsgCtx,
 		    RespLLQ = LLQ#dns_opt_llq{errorcode = static},
 		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}, RespLLQ])
 	    end;
-	false ->
-	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}, LLQ])
+	false -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}, LLQ])
     end;
 handle(MsgCtx, #dns_message{
 	 additional = [#dns_optrr{data = [#dns_opt_llq{} = LLQ]} = OptRR]
