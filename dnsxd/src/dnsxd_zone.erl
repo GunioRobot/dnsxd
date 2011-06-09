@@ -178,20 +178,19 @@ get_active_serials(Now, [_|Serials]) -> get_active_serials(Now, Serials).
 
 %%% ADD SOA + RELATED %%%
 
-add_soa(#dnsxd_zone{rr = RR, soa_param = #dnsxd_soa_param{mname = MName,
-							  rname = RName,
-							  refresh = Ref,
-							  retry = Ret,
-							  expire = Exp,
-							  minimum = Min}
-		   } = Zone) ->
+add_soa(#dnsxd_zone{soa_param = #dnsxd_soa_param{mname = MName,
+						 rname = RName,
+						 refresh = Ref,
+						 retry = Ret,
+						 expire = Exp,
+						 minimum = Min},
+		    serials = Serials} = Zone) ->
     Data = #dns_rrdata_soa{mname = MName,
 			   rname = RName,
 			   refresh = Ref,
 			   retry = Ret,
 			   expire = Exp,
 			   minimum = Min},
-    Serials = get_serials(RR),
     add_soa(Zone, Serials, Data).
 
 add_soa(#dnsxd_zone{name = Name, rr = RRs} = Zone,
