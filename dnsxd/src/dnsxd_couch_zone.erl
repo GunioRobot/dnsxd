@@ -97,7 +97,8 @@ update(_MsgCtx, Key, ZoneName, PreReqs, Updates) ->
 	{error, _Reason} = Error -> Error
     end.
 
-update(#dnsxd_couch_zone{rr = RRs} = Zone, Key, PreReqs, Updates) ->
+update(#dnsxd_couch_zone{rr = RRs, tombstone_period = TombstonePeriod} = Zone,
+       Key, PreReqs, Updates) ->
     Now = dns:unix_time(),
     {MutableRRs, ImmutableRRs} = lists:partition(
 				   fun(#dnsxd_couch_rr{tombstone = Int})
@@ -114,7 +115,7 @@ update(#dnsxd_couch_zone{rr = RRs} = Zone, Key, PreReqs, Updates) ->
     case check_update_prereqs(PreReqs, MutableRRs) of
 	ok ->
 	    NewMutableRRs = update_rr(Key, true, Updates, MutableRRs),
-	    NewImmutableRRs = reap(Now, ImmutableRRs),
+	    NewImmutableRRs = reap(Now, TombstonePeriod, ImmutableRRs),
 	    NewRRs = lists:sort(NewMutableRRs ++ NewImmutableRRs),
 	    NewZone = Zone#dnsxd_couch_zone{rr = NewRRs},
 	    case put(NewZone) of
@@ -222,12 +223,11 @@ update_rr(Key, Private, [{add, Name, Type, TTL, Data, LeaseLength}|Updates],
 	    update_rr(Key, Private, Updates, NewRRs)
     end.
 
-reap(Now, RRs) when is_list(RRs) ->
-    %% todo: should be configurable
-    TombstonePeriod = 48 * 60 * 60,
+reap(Now, TombstonePeriod, RRs) when is_list(RRs) ->
     TombstonedRRs = [ add_tombstone(CouchRR, Now, TombstonePeriod)
 		      || CouchRR <- RRs],
-    [RR || RR <- TombstonedRRs, reap(Now, RR)];
+    [RR || RR <- TombstonedRRs, reap(Now, RR)].
+
 reap(Now, #dnsxd_couch_rr{tombstone = Tombstone})
   when is_integer(Tombstone) andalso Tombstone < Now -> false;
 reap(_Now, #dnsxd_couch_rr{}) -> true.

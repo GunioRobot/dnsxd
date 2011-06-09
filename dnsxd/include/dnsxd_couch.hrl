@@ -10,6 +10,7 @@
 			   enabled = false,
 			   enabled_set = dns:unix_time(),
 			   rev,
+			   tombstone_period = 86400,
 			   rr = [],
 			   axfr_enabled = false,
 			   axfr_enabled_set = dns:unix_time(),
