@@ -29,7 +29,8 @@
 			   {prefix, ""},
 			   {options, [{basic_auth, {"username", "password"}}]},
 			   {database, "dnsxd_zones"},
-			   {init_timeout, 60000}
+			   {init_timeout, 60000},
+			   {update_attempts, 10}
 			  ]}
 	]}
  ]}.

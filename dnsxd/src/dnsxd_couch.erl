@@ -52,33 +52,10 @@ start_link() ->
     end.
 
 update_zone(MsgCtx, Key, ZoneName, ?DNS_CLASS_IN, PreReqs, Updates) ->
-    Now = os:timestamp(),
-    update_zone(Now, 1, MsgCtx, Key, ZoneName, PreReqs, Updates);
+    DsOpts = dnsxd:datastore_opts(),
+    Attempts = proplists:get_value(update_attempts, DsOpts, 10),
+    update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates);
 update_zone(_, _, _, _, _, _) -> refused.
-
-update_zone(_Started, Attempts, _MsgCtx, _Key, _ZoneName, _PreReq, _Updates)
-  when Attempts > 10 -> servfail;
-update_zone(Started, Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
-    ReqRunTime = timer:now_diff(os:timestamp(), Started),
-    if ReqRunTime > 1000000 -> %% 1 second, make this a configurable option?
-	    servfail;
-       true ->
-	    case
-		dnsxd_couch_zone:update(MsgCtx, Key, ZoneName, PreReqs, Updates)
-	    of
-		{ok, Rcode} ->
-		    Rcode;
-		{error, conflict} ->
-		    update_zone(Started, Attempts, MsgCtx, Key, ZoneName,
-				PreReqs, Updates);
-		{error, disabled} ->
-		    servfail;
-		{error, _Error} ->
-		    %% todo: log the error
-		    update_zone(Started, Attempts + 1, MsgCtx, Key, ZoneName,
-				PreReqs, Updates)
-	    end
-    end.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -199,6 +176,21 @@ insert_zone(#dnsxd_couch_zone{enabled = true} = CouchZone) ->
     Zone = to_dnsxd_zone(CouchZone),
     dnsxd:reload_zone(Zone);
 insert_zone(#dnsxd_couch_zone{enabled = false}) -> {error, disabled}.
+
+update_zone_int(0, _MsgCtx, _Key, _ZoneName, _PreReqs, _Updates) -> servfail;
+update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
+    NewAttempts = Attempts - 1,
+    case dnsxd_couch_zone:update(MsgCtx, Key, ZoneName, PreReqs, Updates) of
+	{ok, Rcode} -> Rcode;
+	{error, disabled} -> refused;
+	{error, conflict} ->
+	    update_zone_int(NewAttempts, MsgCtx, Key, ZoneName, PreReqs,
+			    Updates);
+	{error, _Error} ->
+	    %% todo: log the error
+	    update_zone_int(NewAttempts, MsgCtx, Key, ZoneName, PreReqs,
+			    Updates)
+    end.
 
 init_load_zones() ->
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
