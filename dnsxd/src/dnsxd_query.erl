@@ -205,7 +205,10 @@ sign(#ctx{} = Ctx, RRs, RRSet, Processed) ->
     NewProcessed = SignedRRSet ++ Processed,
     sign(Ctx, RRs, [], NewProcessed).
 
-sign_rrset(#ctx{dnssec_keys = Keys, zonename = SignersName}, Set) ->
+sign_rrset(#ctx{dnssec_keys = Keys, zonename = SignersName,
+		cur_serial = CurSerial, next_serial = NextSerial}, Set) ->
+    Incept = CurSerial - 86400,
+    Expire = NextSerial + 86400,
     RRs = [#dns_rr{name = N, class = C, type = Type, ttl = TTL, data = D}
 	   || #dnsxd_rr{name = N, class = C, type = Type, ttl = TTL, data = D}
 		  <- Set ],
@@ -217,7 +220,7 @@ sign_rrset(#ctx{dnssec_keys = Keys, zonename = SignersName}, Set) ->
 		     when Alg =:= ?DNS_ALG_NSEC3RSASHA1 andalso
 			  KeyTag =/= undefined andalso
 			  (KSK =:= false orelse KSK =:= UseKSK) ->
-		       Opts = [], %% calc incept, expire
+		       Opts = [{inception, Incept}, {expiration, Expire}],
 		       #dns_rr{name = Name,
 			       type = ?DNS_TYPE_RRSIG,
 			       class = Class,
