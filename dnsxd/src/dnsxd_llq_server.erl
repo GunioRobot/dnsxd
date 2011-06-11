@@ -205,11 +205,11 @@ handle_call({MsgCtx,
 					     zone_changed = false}),
     {reply, ok, NewState};
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p", [Request]),
+    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p", [Msg]),
+    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info({'DOWN', Ref, _Type, _Object,_Info},
@@ -243,7 +243,7 @@ handle_info(expire, #state{expires = Expires} = State) ->
 	    {noreply, NewState}
     end;
 handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p", [Info]),
+    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, _State) -> ok.

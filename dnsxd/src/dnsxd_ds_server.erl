@@ -184,11 +184,11 @@ handle_call({new_llq, Pid, MsgCtx,
 	    end,
     {reply, Reply, State};
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p", [Request]),
+    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p", [Msg]),
+    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info({'EXIT', Pid, _Reason}, #state{llq_count = LLQCount} = State) ->
@@ -210,7 +210,7 @@ handle_info({serial_change, ZoneName}, #state{} = State) ->
     end,
     {noreply, State};
 handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p", [Info]),
+    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, _State) -> ok.

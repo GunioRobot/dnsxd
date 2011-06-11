@@ -73,11 +73,11 @@ handle_call(compact_finished, _From, #state{} = State) ->
 			   compact_finished = dns:unix_time()},
     {reply, ok, NewState};
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p", [Request]),
+    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p", [Msg]),
+    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info(wrote_zone, #state{compact_ref = Ref,
@@ -155,7 +155,7 @@ handle_info({Ref, Msg}, #state{db_ref = Ref} = State) ->
     ?DNSXD_ERR("Stray message concerning db_ref: ~n~p~n", [Msg]),
     {noreply, State};
 handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p", [Info]),
+    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, _State) -> ok.
