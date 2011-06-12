@@ -4,6 +4,7 @@
 -include("dnsxd.hrl").
 
 -define(DNSXD_COUCH_SERVER, dnsxd_couch).
+-define(DNSXD_COUCH_DESIGNDOC, "app").
 
 %% zone
 -record(dnsxd_couch_zone, {name,

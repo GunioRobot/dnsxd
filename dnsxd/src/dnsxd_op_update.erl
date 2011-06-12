@@ -35,19 +35,27 @@ handle(MsgCtx, #dns_message{questions = [#dns_query{name = ZoneNameM,
     case dnsxd_op_ctx:tsig(MsgCtx) of
 	#dnsxd_tsig_ctx{zonename = ZoneName, keyname = KeyName} ->
 	    {ZoneName, Key} = dnsxd:get_key(KeyName),
+	    LogProps = [{op, update}, {zone, ZoneName}, {keyname, KeyName}],
 	    case run(MsgCtx, ReqMsg, Key) of
 		{RC, undefined} ->
+		    dnsxd:log(MsgCtx, [{rc, RC}|LogProps]),
 		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, RC}]);
 		{RC, Lease} when is_integer(Lease) ->
-		    Props = [{rc, RC}],
+		    ReplyProps = [{rc, RC}],
+		    LogPropsRC = [{rc, RC}|LogProps],
 		    case has_ul(ReqMsg) of
 			true ->
+			    dnsxd:log(MsgCtx, [{lease, Lease}|LogPropsRC]),
 			    UL = #dns_opt_ul{lease = Lease},
-			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [UL|Props]);
-			false -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props)
+			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [UL|ReplyProps]);
+			false ->
+			    dnsxd:log(MsgCtx, LogPropsRC),
+			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, ReplyProps)
 		    end
 	    end;
-	_ -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, notauth}])
+	_ ->
+	    dnsxd:log(MsgCtx, [{zone, ZoneName}, {rc, notauth}, {op, update}]),
+	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, notauth}])
     end;
 handle(MsgCtx, #dns_message{} = ReqMsg) ->
     dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]).

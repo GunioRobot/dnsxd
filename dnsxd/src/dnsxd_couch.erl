@@ -24,7 +24,7 @@
 %% API
 -export([start_link/0]).
 
--export([update_zone/6]).
+-export([update_zone/6, log/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -57,11 +57,20 @@ update_zone(MsgCtx, Key, ZoneName, ?DNS_CLASS_IN, PreReqs, Updates) ->
     update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates);
 update_zone(_, _, _, _, _, _) -> refused.
 
+log(Props) ->
+    Doc = {[{dnsxd_couch_rec, <<"dnsxd_couch_log">>}|Props]},
+    {ok, DbRef} = dnsxd_couch_lib:get_db(),
+    {ok, _} = couchbeam:save_doc(DbRef, Doc).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
 init([]) ->
+    case dnsxd_couch_lib:db_exists() of
+	true -> ok;
+	false -> ok = dnsxd_couch_app:install()
+    end,
     {ok, DbRef, DbSeq} = setup_monitor(),
     State = #state{db_ref = DbRef, db_seq = DbSeq},
     ok = init_load_zones(),
@@ -318,7 +327,10 @@ setup_monitor(Since) ->
     end.
 
 setup_monitor(DbRef, Since) when is_tuple(DbRef) ->
-    Opts = [{since, Since}, {feed, "continuous"}, {heartbeat, true}],
+    Opts = [{since, Since},
+	    {feed, "continuous"},
+	    {heartbeat, true},
+	    {filter, ?DNSXD_COUCH_DESIGNDOC "/dnsxd_couch_zone"}],
     case couchbeam:changes_wait(DbRef, self(), Opts) of
 	{ok, Ref} -> {ok, Ref, Since};
 	{error, _Reason} = Error -> Error

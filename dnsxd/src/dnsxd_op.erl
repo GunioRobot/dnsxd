@@ -103,7 +103,8 @@ get_tsig(#dns_message{additional = Additional}) ->
 	_ -> undefined
     end.
 
-verify_tsig(MsgCtx, ReqMsg, #dns_rr{name = KeyNameM, data = Data}, ReqMsgBin) ->
+verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
+	    #dns_rr{name = KeyNameM, data = Data}, ReqMsgBin) ->
     #dns_rrdata_tsig{alg = AlgM, msgid = MsgId} = Data,
     Alg = dns:dname_to_lower(AlgM),
     KeyName = dns:dname_to_lower(KeyNameM),
@@ -111,8 +112,10 @@ verify_tsig(MsgCtx, ReqMsg, #dns_rr{name = KeyNameM, data = Data}, ReqMsgBin) ->
 				   anc = 0, answers = [],
 				   auc = 0, authority = [],
 				   adc = 0, additional = []},
+    LogProps = [{op, OC}, {rc, notauth}],
     case dnsxd:get_key(KeyName) of
 	{ZoneName, #dnsxd_tsig_key{secret = Secret}} ->
+	    LogPropsZone = [{zone, ZoneName}|LogProps],
 	    case dns:verify_tsig(ReqMsgBin, KeyName, Secret) of
 		{ok, MAC} when is_binary(MAC) ->
 		    TSIGCtx = #dnsxd_tsig_ctx{zonename = ZoneName,
@@ -127,17 +130,26 @@ verify_tsig(MsgCtx, ReqMsg, #dns_rr{name = KeyNameM, data = Data}, ReqMsgBin) ->
 		    Reply = ReplyTmpl#dns_message{rc = notauth},
 		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badtime,
 					   [{other, <<(dns:unix_time()):32>>}]),
+		    dnsxd:log(MsgCtx, [{tsig_err, badtime}|LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg);
 		{ok, TSIGRC} ->
 		    Reply = ReplyTmpl#dns_message{rc = notauth},
 		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, TSIGRC),
+		    dnsxd:log(MsgCtx, [{tsig_err, TSIGRC}|LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg);
 		{error, bad_alg} ->
 		    Reply = ReplyTmpl#dns_message{rc = notauth},
 		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badsig),
+		    dnsxd:log(MsgCtx, [{tsig_err, badalg}|LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg)
 	    end;
 	undefined ->
+	    case dnsxd_ds_server:zone_for_name(KeyName) of
+		undefined -> ok;
+		ZoneName ->
+		    dnsxd:log(MsgCtx, [{zone, ZoneName},
+				       {tsig_err, badkey}|LogProps])
+	    end,
 	    Reply = ReplyTmpl#dns_message{rc = notauth},
 	    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badkey),
 	    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg)

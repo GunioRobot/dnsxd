@@ -41,6 +41,9 @@
 %% llq
 -export([new_llq/3, msg_llq/2]).
 
+%% logging
+-export([log/2]).
+
 -define(APP_DEPS, [sasl, crypto, public_key, dns]).
 
 %%%===================================================================
@@ -124,3 +127,5 @@ get_key(KeyName) -> dnsxd_ds_server:get_key(KeyName).
 new_llq(Pid, MsgCtx, Msg) -> dnsxd_ds_server:new_llq(Pid, MsgCtx, Msg).
 
 msg_llq(MsgCtx, Msg) -> dnsxd_ds_server:msg_llq(MsgCtx, Msg).
+
+log(MsgCtx, Props) -> dnsxd_log:log(MsgCtx, Props).

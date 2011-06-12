@@ -21,7 +21,7 @@
 -include("dnsxd_couch.hrl").
 
 %% API
--export([get_db/0, get_serials/1]).
+-export([get_db/0, db_exists/0, get_serials/1]).
 
 -define(SERVER, dnsxd_couch).
 -define(DB_PREFIX, "dnsxd_couch").
@@ -31,14 +31,14 @@
 %%%===================================================================
 
 get_db() ->
-    CfgOpts = dnsxd:datastore_opts(),
-    Host = proplists:get_value(host, CfgOpts, "localhost"),
-    Port = proplists:get_value(port, CfgOpts, 5984),
-    Prefix = proplists:get_value(prefix, CfgOpts, ""),
-    Options = proplists:get_value(options, CfgOpts, []),
-    Server = couchbeam:server_connection(Host, Port, Prefix, Options),
-    DbName = proplists:get_value(database, CfgOpts, "dnsxd_zones"),
+    Server = get_server(),
+    DbName = get_db_name(),
     couchbeam:open_or_create_db(Server, DbName, []).
+
+db_exists() ->
+    Server = get_server(),
+    DbName = get_db_name(),
+    couchbeam:db_exists(Server, DbName).
 
 get_serials(RR) ->
     All = lists:foldl(fun get_serials/2, sets:new(), RR),
@@ -51,3 +51,17 @@ get_serials(#dnsxd_couch_rr{incept = Incept}, Acc)
   when is_integer(Incept) -> sets:add_element(Incept, Acc);
 get_serials(#dnsxd_couch_rr{expire = Expire}, Acc)
   when is_integer(Expire) -> sets:add_element(Expire, Acc).
+
+%%% Internal functions
+
+get_server() ->
+    CfgOpts = dnsxd:datastore_opts(),
+    Host = proplists:get_value(host, CfgOpts, "localhost"),
+    Port = proplists:get_value(port, CfgOpts, 5984),
+    Prefix = proplists:get_value(prefix, CfgOpts, ""),
+    Options = proplists:get_value(options, CfgOpts, []),
+    couchbeam:server_connection(Host, Port, Prefix, Options).
+
+get_db_name() ->
+    CfgOpts = dnsxd:datastore_opts(),
+    proplists:get_value(database, CfgOpts, "dnsxd_zones").
