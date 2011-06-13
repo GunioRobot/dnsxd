@@ -203,10 +203,8 @@ update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
 
 init_load_zones() ->
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
-    {ok, AllDocs} = couchbeam:all_docs(DbRef, []),
-    init_load_zones(DbRef, AllDocs).
-
-init_load_zones(DbRef, Docs) ->
+    ViewName = {?DNSXD_COUCH_DESIGNDOC, "dnsxd_couch_zone"},
+    {ok, InitView} = couchbeam:view(DbRef, ViewName, [{key, true}]),
     Fun = fun({Props}) ->
 		  ZoneName = get_value(<<"id">>, Props),
 		  case dnsxd_couch_zone:get(DbRef, ZoneName) of
@@ -217,7 +215,7 @@ init_load_zones(DbRef, Docs) ->
 		      {error, not_zone} -> ok
 		  end
 	  end,
-    ok = couchbeam_view:foreach(Docs, Fun).
+    ok = couchbeam_view:foreach(InitView, Fun).
 
 couch_tk_to_dnsxd_key(#dnsxd_couch_tk{id = Id,
 				      name = Name,
