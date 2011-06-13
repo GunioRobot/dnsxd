@@ -1,0 +1,146 @@
+<html>
+<head>
+<title>dnsxd dev install how-to</title>
+<style>
+body { color: #222; background: #eee; }
+p { width: 44em; }
+pre { border: 1px solid #ddd; background: #fefefe; }
+</style>
+</head>
+<body>
+<h1>dnsxd dev install how-to</h1>
+<p>Although not production ready, dnsxd is pretty feature complete and in a state suitable for testing. If you'd like to test dnsxd I suggest setting it up under it's own user with it's own Erlang and CouchDB installs. You may substitute vendor packages if you prefer but you may run into compatibility issues with the older releases vendors tend to package. This guide has been written against Debian 6, substitute for your own distribution as appropriate.</p>
+<p>First if you don't have dig, curl or git, install them:</p>
+<pre>
+$ aptitude install bind9-host curl git 
+</pre>
+<p>Then get CouchDB's dependancies as a shortcut to getting both Erlang and CouchDB dependancies installed:</p>
+<pre>
+$ aptitude build-dep couchdb
+</pre>
+<p>
+Next add a user for dnsxd, login as that user, create a directory called src and change into it. Then download the latest stable Erlang (R14B03 at time of writing) and CouchDB (1.1 at time of writing) source packages:
+</p>
+<pre>
+$ curl -O http://www.erlang.org/download/otp_src_R14B03.tar.gz
+</pre>
+<pre>
+$ curl -O http://apache.mirror.aussiehq.net.au/couchdb/1.1.0/apache-couchdb-1.1.0.tar.gz
+</pre>
+<p>Your local CouchDB mirror can be found via <a href="http://www.apache.org/dyn/closer.cgi?path=/couchdb/1.1.0/apache-couchdb-1.1.0.tar.gz">http://www.apache.org/dyn/closer.cgi?path=/couchdb/1.1.0/apache-couchdb-1.1.0.tar.gz</a>.</p>
+<p>Next unpack Erlang and install it in ~/bin:</p>
+<pre>
+$ tar zxvf otp_src_R14B03.tar.gz
+$ cd otp_src_R14B03
+$ ./configure --enable-hipe --enable-smp-support --enable-threads --enable-kernel-poll --without-javac --without-wx --with-ssl --prefix=/home/dnsxd/bin
+$ make && make install
+</pre>
+<p>Next modify dnsxd's PATH to have a preference for ~/bin by putting the following in ~/.profile or similar:</p>
+<pre>
+PATH="$HOME/bin/bin:$PATH"
+</pre>
+<p>You can ensure you've set the path correctly by firing up Erlang:</p>
+<pre>
+$ erl
+Erlang R14B03 (erts-5.8.4) [source] [rq:1] [async-threads:0] [hipe] [kernel-poll:false]
+
+Eshell V5.8.4  (abort with ^G)
+1> 
+</pre>
+<p>If the banner begins with "Erlang R14B03" the path set is set correctly. You can quit erlang by typing "q()." return (note the trailing dot).</p>
+<p>Now it's time to head back to ~/src and build and install CouchDB:</p>
+<pre>
+$ cd ~/src
+$ tar zxvf apache-couchdb-1.1.0.tar.gz
+$ cd apache-couchdb-1.1.0
+$ ./configure --prefix=/home/dnsxd/bin --with-erlang=/home/dnsxd/bin/lib/erlang/usr/include
+$ make && make install
+</pre>
+<p>You can now start it up and test that it is listening with:</p>
+<pre>
+$ couchdb -b
+Apache CouchDB has started, time to relax.
+$ curl http://localhost:5984/
+{"couchdb":"Welcome","version":"1.1.0"}
+</pre>
+<p>Now on to dnsxd itself - clone the GitHub repository into ~/dnsxd:</p>
+<pre>
+$ cd
+$ git clone https://github.com/andrewtj/dnsxd.git dnsxd
+</pre>
+<p>dnsxd depends on several other Erlang apps. To get the source code for them issue:</p>
+<pre>
+$ cd dnsxd
+$ ./rebar get-deps
+</pre>
+<p>Then compile dnsxd and it's deps with:</p>
+<pre>
+$ ./rebar compile
+</pre>
+<p>Then create a standalone bundle of dnsxd (including Erlang) by building a release:</p>
+<pre>
+$ ./rebar generate
+</pre>
+<p>The release will be generated into a folder called dnsxd under rel. To make it easy to switch back and forth between different releases as you follow dnsxd's development, I suggest moving the generated release from rel/dnsxd to rel/rel000 or similar:</p>
+<pre>
+$ mv rel/dnsxd rel/rel000
+</pre>
+<p>Once you've moved the release, change to it's directory and comment out the default CouchDB username and password in etc/app.config by changing:</p>
+<pre>
+                            {options, [{basic_auth, {"username", "password"}}]},
+</pre>
+<p>To:</p>
+<pre>
+                            % {options, [{basic_auth, {"username", "password"}}]},
+</pre>
+<p>We're almost ready to fire up dnsxd now, but before we do we need to enable it to bind privileged ports. For the moment, the easiest way to do this is give Erlang the privilege using Linux's Capabilities feature. As root, issue:</p>
+<pre>
+# setcap 'cap_net_bind_service=+ep' /home/dnsxd/dnsxd/rel/rel000/erts-5.8.4/bin/beam
+# setcap 'cap_net_bind_service=+ep' /home/dnsxd/dnsxd/rel/rel000/erts-5.8.4/bin/beam.smp
+</pre>
+<p>If you don't have setcap it is provided by the lxc package. You can now start dnsxd interactively with:</p>
+<pre>
+$ ./bin/dnsxd console
+</pre>
+<p>If all goes well, you'll see something like:</p>
+<pre>
+Exec: /home/dnsxd/dnsxd/rel/rel000/erts-5.8.4/bin/erlexec -boot /home/dnsxd/dnsxd/rel/rel000/releases/1/dnsxd -embedded -config /home/dnsxd/dnsxd/rel/rel000/etc/app.config -args_file /home/dnsxd/dnsxd/rel/rel000/etc/vm.args -- console
+Root: /home/dnsxd/dnsxd/rel/rel000
+Erlang R14B03 (erts-5.8.4) [source] [rq:1] [async-threads:5] [hipe] [kernel-poll:true]
+
+Eshell V5.8.4  (abort with ^G)
+(dnsxd@127.0.0.1)1> 
+</pre>
+<p>As before, quit erlang with "q()." and then start dnsxd as a background process with:</p>
+<pre>
+$ ./bin/dnsxd start
+</pre>
+<p>You can attach and detach from dnsxd with:</p>
+<pre>
+$ ./bin/dnsxd attach
+Attaching to /tmp//home/dnsxd/dnsxd/rel/rel000/erlang.pipe.1 (^D to exit)
+
+[Quit]
+</pre>
+(^D is Control-D.)
+<p>To check that dnsxd is listening try a query:</p>
+<pre>
+$ dig dnsxd @::1
+
+; <<>> DiG 9.7.3 <<>> dnsxd @::1
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 49622
+;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 0
+;; WARNING: recursion requested but not available
+
+;; QUESTION SECTION:
+;dnsxd.				IN	A
+
+;; Query time: 0 msec
+;; SERVER: ::1#53(::1)
+;; WHEN: Mon Jun 13 22:00:42 2011
+;; MSG SIZE  rcvd: 23
+</pre>
+</body>
+</html>
