@@ -35,7 +35,10 @@ dispatch(MsgCtx, ReqMsgBin) when is_binary(ReqMsgBin) ->
 		#dns_rr{} = TSIG ->
 		    verify_tsig(MsgCtx0, ReqMsg, TSIG, ReqMsgBin);
 		undefined -> dispatch(MsgCtx0, ReqMsg)
-	    end
+	    end;
+	{_Error, #dns_message{} = ReqMsg, _RemainingBin} ->
+	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]);
+	{_Error, undefined, _RemainingBin} -> ok
     catch Class:Exception ->
 	    ?DNSXD_ERR(
 	       "Error decoding message.~n"
