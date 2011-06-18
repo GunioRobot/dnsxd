@@ -36,8 +36,12 @@ dispatch(MsgCtx, ReqMsgBin) when is_binary(ReqMsgBin) ->
 		    verify_tsig(MsgCtx0, ReqMsg, TSIG, ReqMsgBin);
 		undefined -> dispatch(MsgCtx0, ReqMsg)
 	    end;
-	{_Error, #dns_message{} = ReqMsg, _RemainingBin} ->
-	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]);
+	{Error, #dns_message{} = ReqMsg, _RemainingBin} ->
+	    Proto = dnsxd_op_ctx:protocol(MsgCtx),
+	    if Error =:= truncated andalso Proto =:= udp ->
+		    ?DNSXD_ERR("Partial message received. "
+			       "Larger udp_recbuf_size may be needed.");
+	       true -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]) end;
 	{_Error, undefined, _RemainingBin} -> ok
     catch Class:Exception ->
 	    ?DNSXD_ERR(

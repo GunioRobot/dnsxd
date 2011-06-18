@@ -131,7 +131,11 @@ listen(IP, Port, Protocol) when is_integer(Port) ->
     Opts = [{ip, IP}],
     listen(Port, Protocol, Opts);
 listen(Port, udp, BaseOpts) ->
-    Opts = [{active, once}, binary|BaseOpts],
+    RecBufSize = case dnsxd:get_env(udp_recbuf_size) of
+		     {ok, Size} -> Size;
+		     _ -> 32768
+		 end,
+    Opts = [{active, once}, {recbuf, RecBufSize}, binary|BaseOpts],
     case gen_udp:open(Port, Opts) of
 	{error, eacces} = ErrEacces  ->
 	    case use_procket() of

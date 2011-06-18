@@ -14,6 +14,7 @@
 	 {procket, [{enabled, true},
 		    {progname, "procket"}]},
 	 {udp_payload_size, 1440},
+	 {udp_recbuf_size, 32768},
 	 {tcp_timeout, 60},
 	 {max_workers, 1024},
 	 {update_opts, [{min_lease, 600},
