@@ -95,16 +95,19 @@ handle_info(wrote_zone, #state{compact_ref = Ref,
     Now = dns:unix_time(),
     ok = cancel_timer(Ref),
     Running = is_pid(Pid) andalso is_process_alive(Pid),
-    RunRecently = is_integer(Finished) andalso (Now - Finished) < 60,
-    if Running orelse RunRecently ->
-	    {noreply, State};
-       true ->
+    RunRecently = is_integer(Finished) andalso (Now - Finished) < 900,
+    if not Running andalso RunRecently ->
 	    %% machines often register services in a flurry;
 	    %% not compacting immediately following a write
 	    %% should avoid running compact under load
 	    NewRef = erlang:send_after(10 * 1000, self(), run_compact),
 	    NewState = State#state{compact_ref = NewRef},
-	    {noreply, NewState}
+	    {noreply, NewState};
+       not Running andalso not RunRecently ->
+	    %% avoid consistent writes preventing compact from running
+	    self() ! run_compact,
+	    {noreply, State};
+       true -> {noreply, State}
     end;
 handle_info(run_compact, #state{compact_pid = OldPid} = State) ->
     case is_pid(OldPid) andalso is_process_alive(OldPid) of
