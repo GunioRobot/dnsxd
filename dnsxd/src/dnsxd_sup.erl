@@ -41,8 +41,8 @@ init([]) ->
     Shutdown = 2000,
     DsSpec = {dnsxd_ds_server, {dnsxd_ds_server, start_link, []},
 	      Restart, Shutdown, worker, [dnsxd_ds_server]},
-    SocSpec = {dnsxd_soc_sup, {dnsxd_soc_sup, start_link, []},
-	       Restart, Shutdown, supervisor, [dnsxd_soc_server]},
+    SocSpec = {dnsxd_socs_sup, {dnsxd_socs_sup, start_link, []},
+	       Restart, Shutdown, supervisor, [dnsxd_socs_sup]},
     Mod = dnsxd:datastore(),
     Specs = case should_supervise(Mod) of
 		true ->
