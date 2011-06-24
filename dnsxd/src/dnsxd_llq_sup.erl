@@ -17,66 +17,41 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(dnsxd_sup).
+-module(dnsxd_llq_sup).
 
 -behaviour(supervisor).
 
 %% API
 -export([start_link/0]).
 
-%% supervisor callbacks
+%% Supervisor callbacks
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
 
+%%%===================================================================
+%%% API functions
+%%%===================================================================
+
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
+%%%===================================================================
+%%% Supervisor callbacks
+%%%===================================================================
+
 init([]) ->
-    RestartStrategy = one_for_all,
+    RestartStrategy = one_for_one,
     MaxRestarts = 1000,
     MaxSecondsBetweenRestarts = 3600,
     SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
     Restart = permanent,
     Shutdown = 2000,
-    DsSpec = {dnsxd_ds_server, {dnsxd_ds_server, start_link, []},
-	      Restart, Shutdown, worker, [dnsxd_ds_server]},
-    LLQSpec = {dnsxd_llq_sup, {dnsxd_llq_sup, start_link, []},
-	       Restart, Shutdown, supervisor, [dnsxd_llq_sup]},
-    SocSpec = {dnsxd_soc_sup, {dnsxd_soc_sup, start_link, []},
-	       Restart, Shutdown, supervisor, [dnsxd_soc_server]},
-    Mod = dnsxd:datastore(),
-    Specs = case should_supervise(Mod) of
-		true ->
-		    ModSpec = {Mod, {Mod, start_link, []}, Restart, Shutdown,
-			       supervise_type(Mod), [Mod]},
-		    [DsSpec, LLQSpec, ModSpec, SocSpec];
-		false -> [DsSpec, LLQSpec, SocSpec]
-	    end,
-    {ok, {SupFlags, Specs}}.
+    Type = worker,
+    Manager = {dnsxd_llq_manager, {dnsxd_llq_manager, start_link, [self()]},
+	       Restart, Shutdown, Type, [dnsxd_llq_manager]},
+    {ok, {SupFlags, [Manager]}}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-should_supervise(Mod) ->
-    is_supervisor(Mod) orelse is_gen_server(Mod).
-
-supervise_type(Mod) ->
-    case is_supervisor(Mod) of
-	true -> supervisor;
-	false ->
-	    true = is_gen_server(Mod),
-	    worker
-    end.
-
-is_supervisor(Mod) ->
-    has_behaviour(Mod, supervisor).
-
-is_gen_server(Mod) ->
-    has_behaviour(Mod, gen_server).
-
-has_behaviour(Mod, Behaviour) ->
-    ModAttributes = Mod:module_info(attributes),
-    Behaviours = proplists:get_value(behaviour, ModAttributes, []),
-    lists:member(Behaviour, Behaviours).

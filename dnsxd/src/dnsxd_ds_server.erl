@@ -34,20 +34,15 @@
 %% querying
 -export([zone_for_name/1, get_zone/1, find_zone/1, get_key/1]).
 
-%% llq
--export([new_llq/3, msg_llq/2]).
-
 -define(SERVER, ?MODULE).
 
 -define(TAB_INDEX, dnsxd_ds_index).
 -define(TAB_CAT, dnsxd_ds_catalog).
 -define(TAB_SW, dnsxd_ds_serials).
--define(TAB_LLQ, dnsxd_ds_llq).
 
 -record(state, {llq_count = 0}).
 -record(index, {hash, soa = false, count = 1, domain}).
 -record(sw, {zonename, ref, serials}).
--record(llq_ref, {id, pid, zonename}).
 
 %%%===================================================================
 %%% API
@@ -104,20 +99,8 @@ get_key(KeyName) ->
 	[] -> undefined
     end.
 
-new_llq(Pid, MsgCtx, #dns_message{} = Msg) ->
-    gen_server:call(?SERVER, {new_llq, Pid, MsgCtx, Msg}).
-
-msg_llq(MsgCtx, #dns_message{
-	  additional = [#dns_optrr{data = [#dns_opt_llq{id = Id}]}]
-	 } = Msg) ->
-    case ets:lookup(?TAB_LLQ, Id) of
-	[#llq_ref{id = Id, pid = Pid}] when is_pid(Pid) ->
-	    dnsxd_llq_server:handle_msg(Pid, MsgCtx, Msg);
-	[] -> {error, nosuchllq}
-    end.
-
 ets_memory() ->
-    Tabs = [?TAB_INDEX, ?TAB_CAT, ?TAB_SW, ?TAB_LLQ],
+    Tabs = [?TAB_INDEX, ?TAB_CAT, ?TAB_SW],
     WordSize = erlang:system_info(wordsize),
     Fun = fun(Tab, Acc) ->
 		  TabSize = ets:info(Tab, memory) * WordSize,
@@ -134,7 +117,6 @@ init([]) ->
     process_flag(trap_exit, true),
     ?TAB_INDEX = ets:new(?TAB_INDEX, [named_table, {keypos, #index.hash}]),
     ?TAB_CAT = ets:new(?TAB_CAT, [named_table, {keypos, #dnsxd_zone.name}]),
-    ?TAB_LLQ = ets:new(?TAB_LLQ, [named_table, {keypos, #llq_ref.id}]),
     ?TAB_SW = ets:new(?TAB_SW, [named_table, {keypos, #sw.zonename}]),
     {ok, #state{}}.
 
@@ -157,32 +139,6 @@ handle_call({delete_zone, ZoneName}, _From, State) ->
 		    {error, not_loaded}
 	    end,
     {reply, Reply, State};
-handle_call({new_llq, Pid, MsgCtx,
-	     #dns_message{questions = [#dns_query{name = NameM} = Q],
-			  additional = [#dns_optrr{dnssec = ClientDNSSEC}|_]
-			 } = Msg}, _From, #state{llq_count = Count} = State) ->
-    Name = dns:dname_to_lower(NameM),
-    Opts = dnsxd:llq_opts(),
-    MaxLLQ = proplists:get_value(max_llq, Opts, 500),
-    Reply = case Count >= MaxLLQ of
-		true -> {ok, servfull};
-		false ->
-		    case find_zone(Name) of
-			#dnsxd_zone{name = ZoneName,
-				    dnssec_enabled = DNSSECEnabled} ->
-			    Id = new_llqid(),
-			    DNSSEC = ClientDNSSEC andalso DNSSECEnabled,
-			    {ok, LLQPid} = dnsxd_llq_server:start_link(
-					  Pid, Id, ZoneName, MsgCtx, Q, DNSSEC),
-			    LLQRef = #llq_ref{id = Id, pid = LLQPid,
-					      zonename = ZoneName},
-			    ets:insert(?TAB_LLQ, LLQRef),
-			    ok = dnsxd_llq_server:handle_msg(LLQPid, MsgCtx,
-							     Msg);
-			undefined -> {ok, bad_zone}
-		    end
-	    end,
-    {reply, Reply, State};
 handle_call(Request, _From, State) ->
     ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
@@ -191,20 +147,10 @@ handle_cast(Msg, State) ->
     ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
-handle_info({'EXIT', Pid, _Reason}, #state{llq_count = LLQCount} = State) ->
-    MatchSpec = #llq_ref{id = '$1', pid = Pid, _ = '_'},
-    NewState = case ets:match(?TAB_LLQ, MatchSpec) of
-		   [[Id]] ->
-		       true = ets:delete(?TAB_LLQ, Id),
-		       State#state{llq_count = LLQCount - 1};
-		   [] ->
-		       State
-	       end,
-    {noreply, NewState};
 handle_info({serial_change, ZoneName}, #state{} = State) ->
     case ets:lookup(?TAB_SW, ZoneName) of
 	[#sw{zonename = ZoneName, serials = Serials}] ->
-	    ok = notify_llq(ZoneName),
+	    ok = dnsxd_llq_manager:zone_changed(ZoneName),
 	    ok = setup_serial_change(ZoneName, Serials);
 	[] -> ok
     end,
@@ -231,7 +177,7 @@ insert_zone(#dnsxd_zone{name = ZoneName} = Zone) ->
 	false -> ok = add_to_index(ZoneName)
     end,
     ok = setup_serial_change(Zone),
-    ok = notify_llq(ZoneName).
+    ok = dnsxd_llq_manager:zone_changed(ZoneName).
 
 setup_serial_change(#dnsxd_zone{name = ZoneName, serials = Serials}) ->
     setup_serial_change(ZoneName, Serials).
@@ -262,13 +208,6 @@ cancel_serial_change(ZoneName) ->
 	    ok = cancel_timer(Ref);
 	_ -> ok
     end.
-
-notify_llq(ZoneName) ->
-    ets:foldl(fun(#llq_ref{zonename = SZoneName, pid = Pid}, _)
-		    when SZoneName =:= ZoneName ->
-		      Pid ! zone_changed,
-		      ok;
-		 (_, _) -> ok end, ok, ?TAB_LLQ).
 
 add_to_index(Name) ->
     [SOAHash|AscHashes] = index_hashes(Name),
@@ -321,14 +260,5 @@ join_labels([]) -> <<>>;
 join_labels(Labels) ->
     <<$., Dname/binary>> = << <<$., L/binary>> || L <- Labels >>,
     Dname.
-
-new_llqid() ->
-    Now = dns:unix_time(),
-    Rand = crypto:rand_uniform(0, 16#FFFFFFFF),
-    <<Id:64>> = <<Now:32, Rand:32>>,
-    case ets:member(?TAB_LLQ, Id) of
-	true -> new_llqid();
-	false -> Id
-    end.
 
 cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok.

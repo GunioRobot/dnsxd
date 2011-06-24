@@ -124,8 +124,8 @@ delete_zone(ZoneName) -> dnsxd_ds_server:delete_zone(ZoneName).
 
 get_key(KeyName) -> dnsxd_ds_server:get_key(KeyName).
 
-new_llq(Pid, MsgCtx, Msg) -> dnsxd_ds_server:new_llq(Pid, MsgCtx, Msg).
+new_llq(Pid, MsgCtx, Msg) -> dnsxd_llq_manager:new_llq(Pid, MsgCtx, Msg).
 
-msg_llq(MsgCtx, Msg) -> dnsxd_ds_server:msg_llq(MsgCtx, Msg).
+msg_llq(MsgCtx, Msg) -> dnsxd_llq_manager:msg_llq(MsgCtx, Msg).
 
 log(MsgCtx, Props) -> dnsxd_log:log(MsgCtx, Props).
