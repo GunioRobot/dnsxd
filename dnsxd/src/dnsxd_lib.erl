@@ -23,7 +23,8 @@
 %% API
 -export([ensure_apps_started/1, new_id/0,
 	 active_rr_fun/0, active_rr_fun/1, active_rr/2,
-	 to_dns_rr/1, to_dns_rr/2, is_dnssd_rr/2]).
+	 to_dns_rr/1, to_dns_rr/2, is_dnssd_rr/2,
+	 use_procket/0, procket_open/3]).
 
 %%%===================================================================
 %%% API
@@ -129,6 +130,19 @@ is_dnssd_rr(ZoneName, Name, Type)
     ZoneNameLabels = dns:dname_to_labels(ZoneName),
     is_dnssd_rr(ZoneNameLabels, Name, Type);
 is_dnssd_rr(_ZoneName, _Name, _Type) -> false.
+
+use_procket() ->
+    case dnsxd:get_env(procket) of
+	{ok, Props} when is_list(Props) -> proplists:get_bool(enabled, Props);
+	_ -> false
+    end.
+
+procket_open(Port, Protocol, Type) ->
+    {ok, Props} = dnsxd:get_env(procket),
+    Progname = proplists:get_value(progname, Props, "procket"),
+    Opts = [{progname, Progname}, {protocol, Protocol}, {type, Type}],
+    procket:open(Port, Opts).
+
 
 %%%===================================================================
 %%% Internal functions

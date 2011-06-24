@@ -17,39 +17,37 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(dnsxd_soc_sup).
+-module(dnsxd_soc_req_sup).
 -include("dnsxd.hrl").
 -behaviour(supervisor).
 
 %% API
 -export([start_link/1]).
 
-%% supervisor callbacks
+%% Supervisor callbacks
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
 
 %%%===================================================================
-%%% API
+%%% API functions
 %%%===================================================================
 
-start_link(#dnsxd_if_spec{protocol = Protocol} = IfSpec) ->
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
-    ReqSupSpec = {dnsxd_soc_req_sup,
-		  {dnsxd_soc_req_sup, start_link, [IfSpec]},
-		  permanent, 5000, supervisor, [dnsxd_soc_req_sup]},
-    {ok, ReqSupPid} = supervisor:start_child(SupPid, ReqSupSpec),
-    {Module, Type} = case Protocol of
-			 tcp -> {dnsxd_soc_tcp_sup, supervisor};
-			 udp -> {dnsxd_soc_udp, worker}
-		     end,
-    SocSpec = {Module, {Module, start_link, [IfSpec, ReqSupPid]},
-	       permanent, 5000, Type, dynamic},
-    {ok, _Pid} = supervisor:start_child(SupPid, SocSpec),
-    {ok, SupPid}.
+start_link(#dnsxd_if_spec{} = IfSpec) -> supervisor:start_link(?MODULE, IfSpec).
 
 %%%===================================================================
-%%% supervisor callbacks
+%%% Supervisor callbacks
 %%%===================================================================
 
-init([]) -> {ok, {{one_for_all, 0, 1},[]}}.
+init(#dnsxd_if_spec{protocol = Protocol} = IfSpec) ->
+    Module = case Protocol of
+		 udp -> dnsxd_soc_udp_req;
+		 tcp -> dnsxd_soc_tcp_req
+	     end,
+    {ok, {{simple_one_for_one, 0, 1},
+	  [{Module, {Module, start_link, [IfSpec]},
+	    temporary, brutal_kill, worker, dynamic}]}}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================

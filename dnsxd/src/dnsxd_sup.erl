@@ -43,8 +43,8 @@ init([]) ->
 	      Restart, Shutdown, worker, [dnsxd_ds_server]},
     LLQSpec = {dnsxd_llq_sup, {dnsxd_llq_sup, start_link, []},
 	       Restart, Shutdown, supervisor, [dnsxd_llq_sup]},
-    SocSpec = {dnsxd_soc_sup, {dnsxd_soc_sup, start_link, []},
-	       Restart, Shutdown, supervisor, [dnsxd_soc_server]},
+    SocSpec = {dnsxd_socs_sup, {dnsxd_socs_sup, start_link, []},
+	       Restart, Shutdown, supervisor, [dnsxd_socs_sup]},
     Mod = dnsxd:datastore(),
     Specs = case should_supervise(Mod) of
 		true ->
