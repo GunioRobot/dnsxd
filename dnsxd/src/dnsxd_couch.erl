@@ -60,7 +60,8 @@ update_zone(_, _, _, _, _, _) -> refused.
 log(Props) ->
     Doc = {[{dnsxd_couch_rec, <<"dnsxd_couch_log">>}|Props]},
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
-    {ok, _} = couchbeam:save_doc(DbRef, Doc).
+    {ok, _} = couchbeam:save_doc(DbRef, Doc),
+    ?DNSXD_COUCH_SERVER ! write.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -89,22 +90,25 @@ handle_cast(Msg, State) ->
     ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
-handle_info(wrote_zone, #state{compact_ref = Ref,
-			       compact_finished = Finished,
-			       compact_pid = Pid} = State) ->
+handle_info(write, #state{compact_ref = Ref,
+			  compact_finished = Finished,
+			  compact_pid = Pid} = State) ->
     Now = dns:unix_time(),
     ok = cancel_timer(Ref),
     Running = is_pid(Pid) andalso is_process_alive(Pid),
-    RunRecently = is_integer(Finished) andalso (Now - Finished) < 60,
-    if Running orelse RunRecently ->
-	    {noreply, State};
-       true ->
+    RunRecently = is_integer(Finished) andalso (Now - Finished) < 900,
+    if not Running andalso RunRecently ->
 	    %% machines often register services in a flurry;
 	    %% not compacting immediately following a write
 	    %% should avoid running compact under load
 	    NewRef = erlang:send_after(10 * 1000, self(), run_compact),
 	    NewState = State#state{compact_ref = NewRef},
-	    {noreply, NewState}
+	    {noreply, NewState};
+       not Running andalso not RunRecently ->
+	    %% avoid consistent writes preventing compact from running
+	    self() ! run_compact,
+	    {noreply, State};
+       true -> {noreply, State}
     end;
 handle_info(run_compact, #state{compact_pid = OldPid} = State) ->
     case is_pid(OldPid) andalso is_process_alive(OldPid) of
@@ -339,12 +343,9 @@ start_compact() -> spawn(fun compact/0).
 compact() ->
     case dnsxd_couch_lib:get_db() of
 	{ok, DbRef} ->
-	    case couchbeam:compact(DbRef) of
-		ok ->
-		    ok = gen_server:call(?SERVER, compact_finished, 60 * 1000);
-		{error, Error} ->
-		    ?DNSXD_ERR("Error compacting db:~n~p", [Error])
-	    end;
+	    ok = couchbeam:compact(DbRef),
+	    ok = couchbeam:compact(DbRef, <<?DNSXD_COUCH_DESIGNDOC>>),
+	    ok = gen_server:call(?SERVER, compact_finished, 60 * 1000);
 	{error, Error} ->
 	    ?DNSXD_ERR("Error getting db for compaction:~n~p", [Error])
     end.

@@ -81,7 +81,7 @@ put(#dnsxd_couch_zone{} = Zone) ->
 	    Doc = encode(Zone),
 	    case couchbeam:save_doc(DbRef, Doc) of
 		{ok, _} ->
-		    ?DNSXD_COUCH_SERVER ! wrote_zone,
+		    ?DNSXD_COUCH_SERVER ! write,
 		    ok;
 		{error, _Reason} = Error -> Error
 	    end;
