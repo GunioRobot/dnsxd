@@ -44,7 +44,7 @@ start_link(#dnsxd_if_spec{protocol = Protocol} = IfSpec) ->
 			 udp -> {dnsxd_soc_udp, worker}
 		     end,
     SocSpec = {Module, {Module, start_link, [IfSpec, ReqSupPid]},
-	       permanent, 5000, Type, dynamic},
+	       permanent, 5000, Type, [Module]},
     {ok, _Pid} = supervisor:start_child(SupPid, SocSpec),
     {ok, SupPid}.
 

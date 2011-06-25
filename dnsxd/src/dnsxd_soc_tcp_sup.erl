@@ -51,7 +51,7 @@ init([#dnsxd_if_spec{protocol = tcp} = IfSpec, ReqSupPid]) ->
     Type = worker,
     Children = [ {{dnsxd_soc_tcp, N},
 		  {dnsxd_soc_tcp, start_link, [IfSpec, Socket, ReqSupPid]},
-		  Restart, Shutdown, Type, dynamic}
+		  Restart, Shutdown, Type, [dnsxd_soc_tcp]}
 		 || N <- lists:seq(1, 8) ],
     {ok, {SupFlags, Children}}.
 

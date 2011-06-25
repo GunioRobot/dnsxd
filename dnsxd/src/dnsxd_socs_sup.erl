@@ -50,7 +50,7 @@ init([]) ->
 	Interfaces when is_list(Interfaces) ->
 	    ChildSpecs = [ {if_spec_to_name(IfSpec),
 			    {dnsxd_soc_sup, start_link, [IfSpec]},
-			    Restart, Shutdown, worker, [dnsxd_soc_server]}
+			    Restart, Shutdown, supervisor, [dnsxd_soc_sup]}
 			   || IfSpec <- Interfaces ],
 	    {ok, {SupFlags, ChildSpecs}};
 	{error, _Reason} = Error -> Error
