@@ -99,7 +99,7 @@ set_max_size(MsgCtx, #dns_message{additional = Additional}) ->
 		_ ->
 		    dnsxd_op_ctx:max_size(MsgCtx, 512)
 	    end;
-	_ -> dnsxd_op_ctx:max_size(MsgCtx, 0)
+	_ -> dnsxd_op_ctx:max_size(MsgCtx, 65535)
     end.
 
 get_tsig(#dns_message{additional = []}) -> undefined;
