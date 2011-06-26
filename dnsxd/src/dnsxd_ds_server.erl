@@ -114,7 +114,6 @@ ets_memory() ->
 %%%===================================================================
 
 init([]) ->
-    process_flag(trap_exit, true),
     ?TAB_INDEX = ets:new(?TAB_INDEX, [named_table, {keypos, #index.hash}]),
     ?TAB_CAT = ets:new(?TAB_CAT, [named_table, {keypos, #dnsxd_zone.name}]),
     ?TAB_SW = ets:new(?TAB_SW, [named_table, {keypos, #sw.zonename}]),
