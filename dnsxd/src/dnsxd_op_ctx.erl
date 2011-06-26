@@ -91,7 +91,7 @@ max_size(#dnsxd_op_ctx{max_size = MaxSize}) -> MaxSize.
 max_size(#dnsxd_op_ctx{} = Ctx, NewMaxSize) ->
     Ctx#dnsxd_op_ctx{max_size = NewMaxSize}.
 
-to_wire(MsgCtx, #dns_message{id = MsgId, additional = Additional} = RespMsg0) ->
+to_wire(MsgCtx, #dns_message{additional = Additional} = RespMsg0) ->
     MaxSize = dnsxd_op_ctx:max_size(MsgCtx),
     RespMsg1 = case Additional of
 		   [#dns_optrr{} = OptRR|AddRest] ->
@@ -101,31 +101,18 @@ to_wire(MsgCtx, #dns_message{id = MsgId, additional = Additional} = RespMsg0) ->
 		   _ ->
 		       RespMsg0
 	       end,
-    RespMsgBin = case dnsxd_op_ctx:tsig(MsgCtx) of
-		     #dnsxd_tsig_ctx{keyname = KeyName,
-				     alg = Alg,
-				     secret = Secret,
-				     mac = MAC,
-				     msgid = OrigMsgId} ->
-			 Opts = [{mac, MAC}],
-			 RespMsg2 = RespMsg1#dns_message{id = OrigMsgId},
-			 RespMsg3 = dns:add_tsig(RespMsg2, Alg, KeyName,
-						 Secret, noerror, Opts),
-			 RespMsg4 = RespMsg3#dns_message{id = MsgId},
-			 dns:encode_message(RespMsg4);
-		     undefined ->
-			 dns:encode_message(RespMsg1)
-		 end,
+    RespMsgBin = dns:encode_message(maybe_add_tsig(MsgCtx, RespMsg1)),
     if MaxSize =:= 0 orelse MaxSize =:= undefined ->
 	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin);
        MaxSize >= byte_size(RespMsgBin) ->
 	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin);
        true ->
-	    TCRespMsg = RespMsg1#dns_message{tc = true, anc = 0, adc = 0,
-					     auc = 0, answers = [],
-					     additional = [],
-					     authority = []},
-	    to_wire(MsgCtx, TCRespMsg)
+	    RespMsg2 = RespMsg1#dns_message{tc = true, anc = 0, adc = 0,
+					    auc = 0, answers = [],
+					    additional = [],
+					    authority = []},
+	    RespMsgBin1 = dns:encode_message(maybe_add_tsig(MsgCtx, RespMsg2)),
+	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin1)
     end.
 
 reply(MsgCtx,
@@ -174,3 +161,17 @@ is_eopt(#dns_opt_llq{}) -> true;
 is_eopt(#dns_opt_ul{}) -> true;
 is_eopt(#dns_opt_nsid{}) -> true;
 is_eopt(_) -> false.
+
+maybe_add_tsig(MsgCtx, #dns_message{id = MsgId} = Msg0) ->
+    case dnsxd_op_ctx:tsig(MsgCtx) of
+	#dnsxd_tsig_ctx{keyname = KeyName,
+			alg = Alg,
+			secret = Secret,
+			mac = MAC,
+			msgid = OrigMsgId} ->
+	    Opts = [{mac, MAC}],
+	    Msg1 = Msg0#dns_message{id = OrigMsgId},
+	    Msg2 = dns:add_tsig(Msg1, Alg, KeyName, Secret, noerror, Opts),
+	    Msg2#dns_message{id = MsgId};
+	undefined -> Msg0
+    end.
