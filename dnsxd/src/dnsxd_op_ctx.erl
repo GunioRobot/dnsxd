@@ -93,14 +93,14 @@ max_size(#dnsxd_op_ctx{} = Ctx, NewMaxSize) ->
 
 to_wire(MsgCtx, #dns_message{id = MsgId, additional = Additional} = RespMsg0) ->
     MaxSize = dnsxd_op_ctx:max_size(MsgCtx),
-    RespMsg = case Additional of
-		  [#dns_optrr{} = OptRR|AddRest] ->
-		      NewOptRR = OptRR#dns_optrr{udp_payload_size = MaxSize},
-		      NewAdd = [NewOptRR|AddRest],
-		      RespMsg0#dns_message{additional = NewAdd};
-		  _ ->
-		      RespMsg0
-	      end,
+    RespMsg1 = case Additional of
+		   [#dns_optrr{} = OptRR|AddRest] ->
+		       NewOptRR = OptRR#dns_optrr{udp_payload_size = MaxSize},
+		       NewAdd = [NewOptRR|AddRest],
+		       RespMsg0#dns_message{additional = NewAdd};
+		   _ ->
+		       RespMsg0
+	       end,
     RespMsgBin = case dnsxd_op_ctx:tsig(MsgCtx) of
 		     #dnsxd_tsig_ctx{keyname = KeyName,
 				     alg = Alg,
@@ -108,23 +108,23 @@ to_wire(MsgCtx, #dns_message{id = MsgId, additional = Additional} = RespMsg0) ->
 				     mac = MAC,
 				     msgid = OrigMsgId} ->
 			 Opts = [{mac, MAC}],
-			 RespMsg0 = RespMsg#dns_message{id = OrigMsgId},
-			 RespMsg1 = dns:add_tsig(RespMsg0, Alg, KeyName,
+			 RespMsg2 = RespMsg1#dns_message{id = OrigMsgId},
+			 RespMsg3 = dns:add_tsig(RespMsg2, Alg, KeyName,
 						 Secret, noerror, Opts),
-			 RespMsg2 = RespMsg1#dns_message{id = MsgId},
-			 dns:encode_message(RespMsg2);
+			 RespMsg4 = RespMsg3#dns_message{id = MsgId},
+			 dns:encode_message(RespMsg4);
 		     undefined ->
-			 dns:encode_message(RespMsg)
+			 dns:encode_message(RespMsg1)
 		 end,
     if MaxSize =:= 0 orelse MaxSize =:= undefined ->
 	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin);
        MaxSize >= byte_size(RespMsgBin) ->
 	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin);
        true ->
-	    TCRespMsg = RespMsg#dns_message{tc = true, anc = 0, adc = 0,
-					    auc = 0, answers = [],
-					    additional = [],
-					    authority = []},
+	    TCRespMsg = RespMsg1#dns_message{tc = true, anc = 0, adc = 0,
+					     auc = 0, answers = [],
+					     additional = [],
+					     authority = []},
 	    to_wire(MsgCtx, TCRespMsg)
     end.
 
