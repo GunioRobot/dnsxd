@@ -38,7 +38,6 @@ loop(#dnsxd_if_spec{} = IfSpec, Socket, ReqSupPid) ->
 	{udp, Socket, _, _, _} = Msg ->
 	    {ok, ReqPid} = supervisor:start_child(ReqSupPid, []),
 	    ReqPid ! Msg,
-	    ok = inet:setopts(Socket, [{active, once}]),
 	    ?MODULE:loop(IfSpec, Socket, ReqSupPid);
 	Other ->
 	    ?DNSXD_ERR("Stray message:~n~p~n", [Other]),
