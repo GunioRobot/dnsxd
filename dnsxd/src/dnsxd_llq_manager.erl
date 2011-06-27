@@ -33,7 +33,7 @@
 -define(TAB_LLQ, dnsxd_ds_llq).
 
 -record(state, {sup_pid, llq_count = 0}).
--record(llq_ref, {id, pid, monitor_ref, zonename}).
+-record(llq_ref, {id, pid, monitor_ref, zonename, q}).
 
 %%%===================================================================
 %%% API
@@ -55,11 +55,10 @@ msg_llq(MsgCtx, #dns_message{
     end.
 
 zone_changed(ZoneName) ->
-    ets:foldl(fun(#llq_ref{zonename = SZoneName, pid = Pid}, _)
-		    when SZoneName =:= ZoneName ->
-		      Pid ! zone_changed,
-		      ok;
-		 (_, _) -> ok end, ok, ?TAB_LLQ).
+    MS = {#llq_ref{zonename = ZoneName, pid = '$1', _ = '_'}, [], ['$1']},
+    [ gen_server:cast(Pid, {zone_changed, ZoneName})
+      || Pid <- ets:select(?TAB_LLQ, [MS]) ],
+    ok.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -83,7 +82,8 @@ handle_call({new_llq, ClientPid, MsgCtx,
 		    LLQRef = #llq_ref{id = Id,
 				      pid = LLQPid,
 				      monitor_ref = MonitorRef,
-				      zonename = ZoneName},
+				      zonename = ZoneName,
+				      q = Q},
 		    true = ets:insert(?TAB_LLQ, LLQRef),
 		    ok = dnsxd_llq_server:handle_msg(LLQPid, MsgCtx, Msg),
 		    NewState = State#state{llq_count = Count + 1},
@@ -101,9 +101,9 @@ handle_cast(Msg, State) ->
 
 handle_info({'DOWN', _Ref, process, Pid, _Reason},
 	    #state{llq_count = LLQCount} = State) ->
-    MatchSpec = #llq_ref{id = '$1', pid = Pid, _ = '_'},
-    NewState = case ets:match(?TAB_LLQ, MatchSpec) of
-		   [[Id]] ->
+    MatchSpec = {#llq_ref{id = '$1', pid = Pid, _ = '_'}, [], ['$1']},
+    NewState = case ets:select(?TAB_LLQ, [MatchSpec]) of
+		   [Id] ->
 		       true = ets:delete(?TAB_LLQ, Id),
 		       State#state{llq_count = LLQCount - 1};
 		   [] -> State
@@ -132,9 +132,9 @@ start_new_llq(SupPid, #dns_query{name = NameM} = Q, ClientPid, MsgCtx,
     case dnsxd_ds_server:find_zone(Name) of
 	#dnsxd_zone{name = ZoneName, dnssec_enabled = DNSSECEnabled} ->
 	    Id = new_id(),
-	    DNSSEC = ClientDNSSEC andalso DNSSECEnabled,
+	    DoDNSSEC = ClientDNSSEC andalso DNSSECEnabled,
 	    Spec = {Id, {dnsxd_llq_server, start_link,
-			 [ClientPid, Id, ZoneName, MsgCtx, Q, DNSSEC]},
+			 [ClientPid, Id, ZoneName, MsgCtx, Q, DoDNSSEC]},
 		    temporary, 2000, worker, [dnsxd_llq_server]},
 	    {ok, LLQPid} = supervisor:start_child(SupPid, Spec),
 	    {ok, Id, ZoneName, LLQPid};
