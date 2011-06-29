@@ -119,13 +119,13 @@ handle_call({setup_request, MsgCtx, Msg}, _From,
     ok = dnsxd_op_ctx:reply(MsgCtx, Msg, [{dnssec, DoDNSSEC}, RespLLQ]),
     {reply, ok, NewState};
 handle_call({setup_response, MsgCtx, Msg}, _From,
-	    #state{active = false, id = Id, do_dnssec = DoDNSSEC} = State) ->
+	    #state{id = Id, do_dnssec = DoDNSSEC} = State) ->
     #dns_opt_llq{id = Id, leaselife = ReqLeaseLife} = ReqLLQ = extract_llq(Msg),
-    {LeaseLife, NewState0} = set_lease_life(ReqLeaseLife,
-					    State#state{active = true}),
+    NewState0 = State#state{active = true, answers = [], pending_events = []},
+    {LeaseLife, NewState1} = set_lease_life(ReqLeaseLife, NewState0),
     RespLLQ = ReqLLQ#dns_opt_llq{id = Id, leaselife = LeaseLife},
     ok = dnsxd_op_ctx:reply(MsgCtx, Msg, [{dnssec, DoDNSSEC}, RespLLQ]),
-    NewState1 = send_changes(NewState0),
+    NewState2 = send_changes(NewState1),
     {reply, ok, NewState1};
 handle_call({cancel_lease, MsgCtx, Msg}, _From,
 	    #state{active = true, id = Id, do_dnssec = DoDNSSEC} = State) ->
