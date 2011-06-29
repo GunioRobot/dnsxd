@@ -161,6 +161,8 @@ handle_cast({zone_changed, ZoneName},
 		   false -> State#state{zone_changed = true}
 	       end,
     {noreply, NewState};
+handle_cast({zone_changed, ZoneName}, #state{zonename = ZoneName} = State) ->
+    {noreply, State};
 handle_cast(Msg, State) ->
     ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
