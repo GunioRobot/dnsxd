@@ -126,7 +126,7 @@ handle_call({setup_response, MsgCtx, Msg}, _From,
     RespLLQ = ReqLLQ#dns_opt_llq{id = Id, leaselife = LeaseLife},
     ok = dnsxd_op_ctx:reply(MsgCtx, Msg, [{dnssec, DoDNSSEC}, RespLLQ]),
     NewState2 = send_changes(NewState1),
-    {reply, ok, NewState1};
+    {reply, ok, NewState2};
 handle_call({cancel_lease, MsgCtx, Msg}, _From,
 	    #state{active = true, id = Id, do_dnssec = DoDNSSEC} = State) ->
     #dns_opt_llq{id = Id, leaselife = 0} = LLQ = extract_llq(Msg),
