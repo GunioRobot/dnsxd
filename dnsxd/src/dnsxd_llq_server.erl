@@ -281,7 +281,8 @@ send_changes(#state{id = LLQId, zonename = ZoneName, q = Q, msgctx = MsgCtx,
     LeaseLife = Expire - dns:unix_time(),
     NewEvents = send_changes(Events, MsgCtx, LLQId, Q, DoDNSSEC, Changes,
 			     LeaseLife),
-    NewState = State#state{answers = NewAns, pending_events = NewEvents},
+    NewState = State#state{answers = NewAns, pending_events = NewEvents,
+			   zone_changed = false},
     set_resend_timer(NewState).
 
 send_changes(Events, MsgCtx, LLQId, Q, DoDNSSEC, Changes, LeaseLife) ->
