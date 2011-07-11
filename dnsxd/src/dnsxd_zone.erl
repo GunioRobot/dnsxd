@@ -46,7 +46,7 @@ add_ds(_ZoneName, _TTL, [], DSRR, TaggedKeys) ->
 add_ds(ZoneName, TTL, [#dnsxd_dnssec_key{alg = Alg} = Key|Keys],
        DSRR, TaggedKeys) when Alg =:= ?DNS_ALG_NSEC3RSASHA1 ->
     #dnsxd_dnssec_key{incept = Incept, expire = Expire} = Key,
-    #dnsxd_dnssec_key{ds_id = Id, ksk = KSK} = Key,
+    #dnsxd_dnssec_key{id = Id, ksk = KSK} = Key,
     PKBin = build_ds_publickey(Key),
     Flags = case KSK of
 		true -> 257;

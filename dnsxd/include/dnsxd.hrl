@@ -39,6 +39,6 @@
 		   data}).
 
 -record(dnsxd_tsig_key, {id, name, secret, dnssd_only}).
--record(dnsxd_dnssec_key, {ds_id, incept, expire, alg, ksk, key, keytag}).
+-record(dnsxd_dnssec_key, {id, incept, expire, alg, ksk, key, keytag}).
 
 -endif.

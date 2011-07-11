@@ -240,7 +240,7 @@ couch_dk_to_dnsxd_key(#dnsxd_couch_dk{id = Id, incept = Incept, expire = Expire,
 		  <<BinSize:32, Bin/binary>>
 	  end,
     Key = [ Fun(X) || X <- [E, N, D] ],
-    #dnsxd_dnssec_key{ds_id = Id, incept = Incept, expire = Expire, alg = Alg,
+    #dnsxd_dnssec_key{id = Id, incept = Incept, expire = Expire, alg = Alg,
 		      ksk = KSK, key = Key}.
 
 cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;
