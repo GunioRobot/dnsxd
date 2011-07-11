@@ -282,8 +282,7 @@ to_dnsxd_zone(#dnsxd_couch_zone{name = Name,
 		_ ->
 		    undefined
 	    end,
-    #dnsxd_zone{opaque_ds_id = Name,
-		name = Name,
+    #dnsxd_zone{name = Name,
 		rr = RRs,
 		serials = Serials,
 		axfr_enabled = AXFREnabled,

@@ -15,8 +15,7 @@
 
 -record(dnsxd_tsig_ctx, {zonename, keyname, alg, secret, mac, msgid}).
 
--record(dnsxd_zone, {opaque_ds_id,
-		     name,
+-record(dnsxd_zone, {name,
 		     rr,
 		     serials,
 		     axfr_enabled,
