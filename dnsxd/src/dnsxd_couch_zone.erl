@@ -289,7 +289,6 @@ decode(Tag, Field, List) ->
 -define(FIELDS(Atom), fields(Atom) -> record_info(fields, Atom)).
 ?FIELDS(dnsxd_couch_zone);
 ?FIELDS(dnsxd_couch_rr);
-?FIELDS(dnsxd_couch_he);
 ?FIELDS(dnsxd_couch_sp);
 ?FIELDS(dnsxd_couch_tk);
 ?FIELDS(dnsxd_couch_dk);
@@ -302,7 +301,6 @@ values(Rec) when is_tuple(Rec) -> tl(tuple_to_list(Rec)).
 get_default(Tag, Field)
   when Tag =:= dnsxd_couch_zone orelse
        Tag =:= dnsxd_couch_rr orelse
-       Tag =:= dnsxd_couch_he orelse
        Tag =:= dnsxd_couch_sp ->
     Fields = fields(Tag),
     [_|Values] = tuple_to_list(defaults(Tag)),
@@ -313,7 +311,6 @@ get_default(_, _) -> undefined.
 -define(DEFAULTS(Atom), defaults(Atom) -> #Atom{}).
 ?DEFAULTS(dnsxd_couch_zone);
 ?DEFAULTS(dnsxd_couch_rr);
-?DEFAULTS(dnsxd_couch_he);
 ?DEFAULTS(dnsxd_couch_sp).
 
 encode(Rec) when is_tuple(Rec) ->
@@ -343,8 +340,6 @@ encode_zipper(dnsxd_couch_rr, data, Bin) when is_binary(Bin) ->
     {<<"data">>, base64:encode(Bin)};
 encode_zipper(dnsxd_couch_rr, data, Data) when is_tuple(Data) ->
     {<<"data">>, encode(Data)};
-encode_zipper(_Tag, history, History) ->
-    {<<"history">>, [ encode(Entry) || Entry <- History ]};
 encode_zipper(_Tag, Key, undefined) -> {atom_to_binary(Key, latin1), null};
 encode_zipper(_Tag, Key, Value) -> {atom_to_binary(Key, latin1), Value}.
 
@@ -363,7 +358,6 @@ merge(#dnsxd_couch_zone{name = ZoneName} = Winner,
 		  fun merge_axfr_enabled/2,
 		  fun merge_axfr_hosts/2,
 		  fun merge_tsig_keys/2,
-		  fun merge_history/2,
 		  fun merge_soa_param/2,
 		  fun merge_dnssec_enabled/2,
 		  fun merge_dnssec_keys/2,
@@ -449,13 +443,6 @@ merge_dnssec_keys(#dnsxd_couch_zone{dnssec_keys = WKeys} = Winner,
 			    #dnsxd_couch_dk.set,
 			    CombinedKeys),
     Winner#dnsxd_couch_zone{dnssec_keys = NewKeys}.
-
-%% history
-merge_history(#dnsxd_couch_zone{history = WHistory} = Winner,
-	      #dnsxd_couch_zone{history = LHistory}) ->
-    Combined = lists:usort(WHistory ++ LHistory),
-    %% todo: add merge note
-    Winner#dnsxd_couch_zone{history = Combined}.
 
 %% helpers
 

@@ -17,7 +17,6 @@
 			   axfr_enabled_set = dns:unix_time(),
 			   axfr_hosts = [],
 			   tsig_keys = [],
-			   history = [],
 			   soa_param,
 			   soa_param_set = dns:unix_time(),
 			   dnssec_enabled = false,
@@ -70,12 +69,5 @@
 			 data}).
 -record(dnsxd_couch_dk_rsa, {e, n, d}).
 -record(dnsxd_couch_nsec3param, {salt, iter, alg}).
-
-%% history entry
--record(dnsxd_couch_he, {id = dnsxd_lib:new_id(),
-			 time = dns:unix_time(),
-			 event,
-			 actor = null,
-			 entry}).
 
 -endif.
