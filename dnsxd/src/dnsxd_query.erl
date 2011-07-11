@@ -307,7 +307,8 @@ match_qtype(#ctx{dnssec= true}, Type,
 match_qtype(#ctx{}, _Type, #dnsxd_rr{}) -> false.
 
 match_down(#ctx{cuts = Cuts, names = Names, rr = RRs} = Q,
-	   LastDname, [Label]) ->
+	   LastDname, [RawLabel]) ->
+    Label = escape_label(RawLabel),
     LabelSize = byte_size(Label),
     Name = <<Label:LabelSize/binary, $., LastDname/binary>>,
     WName = <<"*.", LastDname/binary>>,
@@ -329,7 +330,8 @@ match_down(#ctx{cuts = Cuts, names = Names, rr = RRs} = Q,
 	false -> nomatch
     end;
 match_down(#ctx{cuts = Cuts, names = Names, rr = RRs} = Q, LastDname,
-	   [Label|Labels]) ->
+	   [RawLabel|Labels]) ->
+    Label = escape_label(RawLabel),
     LabelSize = byte_size(Label),
     Name = <<Label:LabelSize/binary, $., LastDname/binary>>,
     NameIsCut = lists:member(Name, Cuts),
@@ -361,8 +363,17 @@ build_asc_names(ZoneName, [_|Asc] = Cur) ->
     end.
 
 join_labels(Labels) ->
-    <<$., Dname/binary>> = << <<$., L/binary>> || L <- Labels >>,
+    <<_, Dname/binary>> = << <<$., (escape_label(L))/binary>> || L <- Labels >>,
     Dname.
+
+escape_label(Label) -> escape_label(<<>>, Label).
+escape_label(Label, <<>>) -> Label;
+escape_label(Label, <<C, Rest/binary>>) ->
+    NewLabel = case C of
+		   $. -> <<Label/binary, $\\, $.>>;
+		   _ -> <<Label/binary, C>>
+	       end,
+    escape_label(NewLabel, Rest).
 
 build_cuts(ZoneName, RRs) -> build_cuts(ZoneName, RRs, []).
 
