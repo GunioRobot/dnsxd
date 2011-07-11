@@ -23,8 +23,8 @@
 %% API
 -export([answer/3, answer/4]).
 
--record(ctx, {now, rr, zonename, names, cuts, followed_names = [],
-	      soa, dnssec, dnssec_keys, nsec3, cur_serial, next_serial}).
+-record(ctx, {now, rr, zonename, names, cuts, soa, dnssec, dnssec_keys, nsec3,
+	      cur_serial, next_serial}).
 
 %%%===================================================================
 %%% API
@@ -65,7 +65,7 @@ answer(#dnsxd_zone{name = ZoneName, rr = RR, soa_param = SOA,
 	       nsec3 = NSEC3,
 	       cur_serial = CurSerial,
 	       next_serial = NextSerial},
-    {RCODE, An, Au, Ad} = an(Query, Ctx, []),
+    {RCODE, An, Au, Ad} = an(Query, Ctx),
     {RCODE,
      dnsxd_lib:to_dns_rr(Now, An),
      dnsxd_lib:to_dns_rr(Now, Au),
@@ -81,23 +81,21 @@ current_serials(Now, [_|Serials]) -> current_serials(Now, Serials);
 current_serials(_Now, _Serials) -> {0, 0}. %% this should never happen
 
 an(#dns_query{name = NameM, type = Type} = Query,
-   #ctx{zonename = ZoneName, followed_names = FollowedNames, rr = RRs} = Ctx,
-   An) ->
+   #ctx{zonename = ZoneName, rr = RRs} = Ctx) ->
     Name = dns:dname_to_lower(NameM),
     SOA = lists:keyfind(?DNS_TYPE_SOA, #dnsxd_rr.type, RRs),
     case Name of
 	ZoneName ->
-	    NewRRs = [ RR#dnsxd_rr{name = NameM}
-		       || #dnsxd_rr{} = RR <- RRs,
-			  match_name(ZoneName, RR),
-			  match_qtype(Ctx, Type, RR) ],
-	    NewAn = An ++ NewRRs,
-	    case NewAn of
+	    An = [ RR#dnsxd_rr{name = NameM}
+		   || #dnsxd_rr{} = RR <- RRs,
+		      match_name(ZoneName, RR),
+		      match_qtype(Ctx, Type, RR) ],
+	    case An of
 		[] ->
 		    %% no data
 		    FinalAn = sign(Ctx, add_nsec3(false, Ctx, Query, [SOA])),
 		    {noerror, [], FinalAn, []};
-		_ -> ad(Ctx, NewAn, [])
+		_ -> ad(Ctx, An, [])
 	    end;
 	_ ->
 	    NameSize = byte_size(Name),
@@ -106,44 +104,26 @@ an(#dns_query{name = NameM, type = Type} = Query,
 	    <<QLabelsBin:QLabelsSize/binary, $., ZoneName/binary>> = Name,
 	    QLabels = lists:reverse(dns:dname_to_labels(QLabelsBin)),
 	    case match_down(Ctx, ZoneName, QLabels) of
+		{match, [#dnsxd_rr{type = ?DNS_TYPE_CNAME}] = An} ->
+		    au(Ctx, An);
 		{match, MatchRRs} ->
-		    case match_cname(Ctx, MatchRRs) of
-			{true, RRs, Next} ->
-			    NewRRs = [ RR#dnsxd_rr{name = NameM} || RR <- RRs ],
-			    case lists:member(Next, FollowedNames) of
-				true -> {servfail, [], [], []};
-				false ->
-				    NewAn = An ++ NewRRs,
-				    NewQuery = Query#dns_query{name = Next},
-				    NewFollowed = [Next|FollowedNames],
-				    NewCtx = Ctx#ctx{
-					       followed_names = NewFollowed},
-				    an(NewQuery, NewCtx, NewAn)
-			    end;
-			false ->
-			    NewRRs = [ RR#dnsxd_rr{name = NameM}
-				       || #dnsxd_rr{} = RR <- MatchRRs,
-					  match_qtype(Ctx, Type, RR) ],
-			    NewAn = An ++ NewRRs,
-			    case NewAn of
-				[] ->
-				    FinalAn = sign(Ctx,
-						   add_nsec3(false, Ctx, Query,
-							     [SOA])),
-				    {noerror, [], FinalAn, []};
-				_ -> au(Ctx, NewAn)
-			    end
-		    end;
-		{referral, RefRRs} -> ad(Ctx, An, RefRRs);
-		nomatch ->
+		    An = [ RR#dnsxd_rr{name = NameM}
+			   || #dnsxd_rr{} = RR <- MatchRRs,
+			      match_qtype(Ctx, Type, RR) ],
 		    case An of
 			[] ->
-			    %% no name
-			    FinalAn = sign(Ctx,
-					   add_nsec3(true, Ctx, Query, [SOA])),
-			    {nxdomain, [], FinalAn, []};
+			    NSEC3 = add_nsec3(false, Ctx, Query, [SOA]),
+			    FinalAn = sign(Ctx, NSEC3),
+			    {noerror, [], FinalAn, []};
 			_ -> au(Ctx, An)
-		    end
+		    end;
+		{referral, RefRRs} ->
+		    An = [],
+		    ad(Ctx, An, RefRRs);
+		nomatch ->
+		    %% no name
+		    FinalAn = sign(Ctx, add_nsec3(true, Ctx, Query, [SOA])),
+		    {nxdomain, [], FinalAn, []}
 	    end
     end.
 
@@ -355,11 +335,6 @@ match_down(#ctx{cuts = Cuts, names = Names, rr = RRs} = Q, LastDname,
 	false -> nomatch
     end;
 match_down(_, _, _) -> nomatch.
-
-match_cname(#ctx{}, [#dnsxd_rr{type = cname,
-			       data = #dns_rrdata_cname{dname = Next}}] = RR) ->
-    {true, RR, Next};
-match_cname(#ctx{}, _) -> false.
 
 build_names(ZoneName, RRs) -> build_names(ZoneName, [ZoneName], RRs).
 
