@@ -80,6 +80,14 @@ current_serials(Now, [Current, Next|_])
 current_serials(Now, [_|Serials]) -> current_serials(Now, Serials);
 current_serials(_Now, _Serials) -> {0, 0}. %% this should never happen
 
+an(#dns_query{} = Query,
+   #ctx{zonename = ZoneName, now = Now, rr = [],
+	soa = #dnsxd_soa_param{mname = Mname, rname = Rname}} = Ctx) ->
+    RRData = #dns_rrdata_soa{mname = Mname, rname = Rname, _ = 0},
+    RR = #dnsxd_rr{name = ZoneName, incept = Now - 1, expire = Now + 1, ttl = 0,
+		   class = ?DNS_CLASS_IN, type = ?DNS_TYPE_SOA, data = RRData},
+    NewCtx = Ctx#ctx{rr = [RR]},
+    an(Query, NewCtx);
 an(#dns_query{name = NameM, type = Type} = Query,
    #ctx{zonename = ZoneName, rr = RRs} = Ctx) ->
     Name = dns:dname_to_lower(NameM),
