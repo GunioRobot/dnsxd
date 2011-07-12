@@ -223,20 +223,22 @@ update_rr(Key, Private, [{add, Name, Type, TTL, Data, LeaseLength}|Updates],
 	    update_rr(Key, Private, Updates, NewRRs)
     end.
 
-reap(Now, TombstonePeriod, RRs) when is_list(RRs) ->
-    TombstonedRRs = [ add_tombstone(CouchRR, Now, TombstonePeriod)
-		      || CouchRR <- RRs],
-    [RR || RR <- TombstonedRRs, reap(Now, RR)].
-
-reap(Now, #dnsxd_couch_rr{tombstone = Tombstone})
-  when is_integer(Tombstone) andalso Tombstone < Now -> false;
-reap(_Now, #dnsxd_couch_rr{}) -> true.
+reap(Now, TombstonePeriod, Recs) when is_list(Recs) ->
+    TombstonedRecs = [add_tombstone(Rec, Now, TombstonePeriod) || Rec <- Recs],
+    [Rec || Rec <- TombstonedRecs, is_current(Now, Rec)].
 
 add_tombstone(#dnsxd_couch_rr{expire = Expires} = RR, Now, TombstonePeriod)
   when is_integer(Expires) andalso Expires < Now ->
     Tombstone = Expires + TombstonePeriod,
     RR#dnsxd_couch_rr{tombstone = Tombstone};
-add_tombstone(#dnsxd_couch_rr{} = RR, _Now, _TombstonePeriod) -> RR.
+add_tombstone(Rec, _Now, _TombstonePeriod) -> Rec.
+
+is_current(Now, #dnsxd_couch_rr{tombstone = Tombstone})
+  when is_integer(Tombstone) -> is_current(Now, Tombstone);
+is_current(Now, #dnsxd_couch_tk{tombstone = Tombstone})
+  when is_integer(Tombstone) -> is_current(Now, Tombstone);
+is_current(_Now, Rec) when is_tuple(Rec) -> true;
+is_current(Now, Tombstone) when is_integer(Tombstone) -> Now < Tombstone.
 
 get_conflicts({DocProps}) -> get_conflicts(DocProps);
 get_conflicts(DocProps) -> get_value(<<"_conflicts">>, DocProps, []).
