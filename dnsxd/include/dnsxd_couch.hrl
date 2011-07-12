@@ -66,7 +66,8 @@
 			 set = dns:unix_time(),
 			 alg,
 			 ksk = false,
-			 data}).
+			 data,
+			 tombstone = null}).
 -record(dnsxd_couch_dk_rsa, {e, n, d}).
 -record(dnsxd_couch_nsec3param, {salt, iter, alg}).
 

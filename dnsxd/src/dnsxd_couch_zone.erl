@@ -236,6 +236,8 @@ is_current(Now, #dnsxd_couch_rr{tombstone = Tombstone})
   when is_integer(Tombstone) -> is_current(Now, Tombstone);
 is_current(Now, #dnsxd_couch_tk{tombstone = Tombstone})
   when is_integer(Tombstone) -> is_current(Now, Tombstone);
+is_current(Now, #dnsxd_couch_dk{tombstone = Tombstone})
+  when is_integer(Tombstone) -> is_current(Now, Tombstone);
 is_current(_Now, Rec) when is_tuple(Rec) -> true;
 is_current(Now, Tombstone) when is_integer(Tombstone) -> Now < Tombstone.
 
