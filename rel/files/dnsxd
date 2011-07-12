@@ -50,6 +50,9 @@ ERTS_PATH=$RUNNER_BASE_DIR/erts-$ERTS_VSN/bin
 # Setup command to control the node
 NODETOOL="$ERTS_PATH/escript $ERTS_PATH/nodetool $NAME_ARG $COOKIE_ARG"
 
+# dnsxd admin
+DNSXDADMIN="$ERTS_PATH/escript $ERTS_PATH/dnsxdadmin $NAME_ARG $COOKIE_ARG $RUNNER_ETC_DIR"
+
 # Check the first argument for instructions
 case "$1" in
     start)
@@ -146,8 +149,12 @@ case "$1" in
         exec $CMD
         ;;
 
+    admin|rb)
+        exec $DNSXDADMIN $@
+        ;;
+
     *)
-        echo "Usage: $SCRIPT {start|stop|restart|reboot|ping|console|attach}"
+        echo "Usage: $SCRIPT {start|stop|restart|reboot|ping|console|attach|admin|rb}"
         exit 1
         ;;
 esac

@@ -1,0 +1,37 @@
+%% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+
+-define(MOD_PREFIX, "dnsxd_admin_").
+-define(MOD_ENTRY_FUN, main).
+-define(MOD_ENTRY_ARITY, 4).
+
+main(["-name", NameArg, "-setcookie", CookieArg, EtcDir, ModSuffix|Args]) ->
+    Mod = list_to_atom(?MOD_PREFIX ++ ModSuffix),
+    case valid_module(Mod) of
+        ok ->
+            Mod:?MOD_ENTRY_FUN(NameArg, CookieArg, EtcDir, Args);
+        {error, non_existing} ->
+            fail("Module ~s was not found", [Mod]);
+        {error, missing_entry} ->
+            fail("Module ~s does not export ~s/~p",
+                 [Mod, ?MOD_ENTRY_FUN, ?MOD_ENTRY_ARITY])
+    end;
+main(Args) ->
+    fail("~s has been invoked with bad parameters: ~p",
+         [escript:script_name(), Args]).
+
+valid_module(Mod) ->
+    case non_existing =:= code:which(Mod) of
+        true -> {error, non_existing};
+        false ->
+            ModEntryExport = {?MOD_ENTRY_FUN, ?MOD_ENTRY_ARITY},
+            case lists:member(ModEntryExport, Mod:module_info(exports)) of
+                true -> ok;
+                false -> {error, missing_entry}
+            end
+    end.
+
+fail(Fmt, Args) -> fail(Fmt, Args, 1).
+
+fail(Fmt, Args, ExitCode) ->
+    io:format("Error: " ++ Fmt ++ "\n", Args),
+    erlang:halt(ExitCode).
