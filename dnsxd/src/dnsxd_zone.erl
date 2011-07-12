@@ -24,7 +24,7 @@
 
 prepare(#dnsxd_zone{} = Zone) ->
     Funs = [fun add_ds/1, fun pad_rr/1, fun add_serials_to_zone/1,
-	    fun add_soa/1, fun order_rr/1],
+	    fun add_soa/1, fun order_rr/1, fun rmv_disabled_tk/1],
     #dnsxd_zone{} = lists:foldl(fun(Fun, Z) -> Fun(Z) end, Zone, Funs).
 
 add_serials_to_zone(#dnsxd_zone{rr = RR} = Zone) ->
@@ -241,6 +241,10 @@ order_rr_name([X|A], [X|B]) -> order_rr_name(A, B);
 order_rr_name([], [_|_]) -> true;
 order_rr_name([_|_], []) -> false;
 order_rr_name([X|_], [Y|_]) -> X =< Y.
+
+rmv_disabled_tk(#dnsxd_zone{tsig_keys = Keys} = Zone) ->
+    NewKeys = [ Key || #dnsxd_tsig_key{enabled = true} = Key <- Keys ],
+    Zone#dnsxd_zone{tsig_keys = NewKeys}.
 
 get_serials(RR) ->
     All = lists:foldl(fun get_serials/2, sets:new(), RR),

@@ -224,10 +224,12 @@ init_load_zones() ->
 couch_tk_to_dnsxd_key(#dnsxd_couch_tk{id = Id,
 				      name = Name,
 				      secret = Secret,
+				      enabled = Enabled,
 				      dnssd_only = DnssdOnly}) ->
     #dnsxd_tsig_key{id = Id,
 		    name = Name,
 		    secret = base64:decode(Secret),
+		    enabled = Enabled,
 		    dnssd_only = DnssdOnly}.
 
 couch_dk_to_dnsxd_key(#dnsxd_couch_dk{id = Id, incept = Incept, expire = Expire,
