@@ -114,7 +114,7 @@ update(#dnsxd_couch_zone{rr = RRs, tombstone_period = TombstonePeriod} = Zone,
 				   end, RRs),
     case check_update_prereqs(PreReqs, MutableRRs) of
 	ok ->
-	    NewMutableRRs = update_rr(Key, true, Updates, MutableRRs),
+	    NewMutableRRs = update_rr(Key, Updates, MutableRRs),
 	    NewImmutableRRs = reap(Now, TombstonePeriod, ImmutableRRs),
 	    NewRRs = lists:sort(NewMutableRRs ++ NewImmutableRRs),
 	    NewZone = Zone#dnsxd_couch_zone{rr = NewRRs},
@@ -164,16 +164,16 @@ check_update_prereqs([{not_exist, NameM, Type}|PreReqs], RRs) ->
     if Exists -> yxrrset;
        true -> check_update_prereqs(PreReqs, RRs) end.
 
-update_rr(_Key, _Private, [], RRs) -> RRs;
-update_rr(Key, Private, [{delete, Name}|Updates], RRs) ->
+update_rr(_Key, [], RRs) -> RRs;
+update_rr(Key, [{delete, Name}|Updates], RRs) ->
     Now = dns:unix_time(),
     {Match, Diff} = lists:partition(
 		      fun(#dnsxd_couch_rr{name = SN}) ->
 			      dns:dname_to_lower(SN) =:= Name end, RRs),
     NewMatch = [ RR#dnsxd_couch_rr{expire = Now - 1} || RR <- Match ],
     NewRRs = NewMatch ++ Diff,
-    update_rr(Key, Private, Updates, NewRRs);
-update_rr(Key, Private, [{delete, Name, Type}|Updates], RRs) ->
+    update_rr(Key, Updates, NewRRs);
+update_rr(Key, [{delete, Name, Type}|Updates], RRs) ->
     Now = dns:unix_time(),
     Fun = fun(#dnsxd_couch_rr{name = SN, type = ST}) ->
 		  dns:dname_to_lower(SN) =:= Name andalso ST =:= Type
@@ -181,8 +181,8 @@ update_rr(Key, Private, [{delete, Name, Type}|Updates], RRs) ->
     {Match, Diff} = lists:partition(Fun, RRs),
     NewMatch = [ RR#dnsxd_couch_rr{expire = Now - 1} || RR <- Match ],
     NewRRs = NewMatch ++ Diff,
-    update_rr(Key, Private, Updates, NewRRs);
-update_rr(Key, Private, [{delete, Name, Type, Data}|Updates], RRs) ->
+    update_rr(Key, Updates, NewRRs);
+update_rr(Key, [{delete, Name, Type, Data}|Updates], RRs) ->
     Now = dns:unix_time(),
     Fun = fun(#dnsxd_couch_rr{name = SN, type = ST, data = SD}) ->
 		  (dns:dname_to_lower(SN) =:= Name andalso
@@ -191,9 +191,8 @@ update_rr(Key, Private, [{delete, Name, Type, Data}|Updates], RRs) ->
     {Match, Diff} = lists:partition(Fun, RRs),
     NewMatch = [ RR#dnsxd_couch_rr{expire = Now - 1} || RR <- Match ],
     NewRRs = NewMatch ++ Diff,
-    update_rr(Key, Private, Updates, NewRRs);
-update_rr(Key, Private, [{add, Name, Type, TTL, Data, LeaseLength}|Updates],
-	  RRs) ->
+    update_rr(Key, Updates, NewRRs);
+update_rr(Key, [{add, Name, Type, TTL, Data, LeaseLength}|Updates], RRs) ->
     Fun = fun(#dnsxd_couch_rr{name = SN, type = ST, data = SD}) ->
 		  (dns:dname_to_lower(SN) =:= Name
 		   andalso Type =:= ST andalso SD =:= Data)
@@ -210,17 +209,17 @@ update_rr(Key, Private, [{add, Name, Type, TTL, Data, LeaseLength}|Updates],
 				    type = Type, ttl = TTL, data = Data,
 				    incept = Now, expire = Expire},
 	    NewRRs = [NewRR|RRs],
-	    update_rr(Key, Private, Updates, NewRRs);
+	    update_rr(Key, Updates, NewRRs);
 	[#dnsxd_couch_rr{} = RR] ->
 	    NewRR = RR#dnsxd_couch_rr{ttl = TTL, set = Now, expire = Expire},
 	    NewRRs = [NewRR|Diff],
-	    update_rr(Key, Private, Updates, NewRRs);
+	    update_rr(Key, Updates, NewRRs);
 	[#dnsxd_couch_rr{} = RR|Dupes] ->
 	    NewRR = RR#dnsxd_couch_rr{ttl = TTL, set = Now, expire = Expire},
 	    NewDupes = [ Dupe#dnsxd_couch_rr{expire = Now - 1}
 			 || Dupe <- Dupes ],
 	    NewRRs = NewDupes ++ [NewRR|Diff],
-	    update_rr(Key, Private, Updates, NewRRs)
+	    update_rr(Key, Updates, NewRRs)
     end.
 
 reap(Now, TombstonePeriod, Recs) when is_list(Recs) ->
