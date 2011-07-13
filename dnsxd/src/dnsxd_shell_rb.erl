@@ -17,7 +17,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(dnsxd_admin_rb).
+-module(dnsxd_shell_rb).
 -export([main/4]).
 
 -define(DEFAULT_MAX, 20).
@@ -94,7 +94,7 @@ options() ->
       "Maximum number of reports (default: " ++ MaxStr ++ ")"}].
 
 usage(ExitCode) ->
-    getopt:usage(options(), "dnsxd rb "),
+    getopt:usage(options(), "dnsxd-rb"),
     ?EXIT_DELAY,
     erlang:halt(ExitCode).
 

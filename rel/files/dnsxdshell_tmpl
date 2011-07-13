@@ -1,0 +1,4 @@
+#!/bin/sh
+SCRIPT_DIR=$(cd ${0%/*} && pwd)
+SCRIPT_CMD=$(basename $0 | sed 's/-/\ /g')
+exec ${SCRIPT_DIR}/${SCRIPT_CMD} $@

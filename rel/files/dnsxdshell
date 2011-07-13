@@ -1,6 +1,6 @@
 %% -*- mode: erlang;erlang-indent-level: 4;indent-tabs-mode: nil -*-
 
--define(MOD_PREFIX, "dnsxd_admin_").
+-define(MOD_PREFIX, "dnsxd_shell_").
 -define(MOD_ENTRY_FUN, main).
 -define(MOD_ENTRY_ARITY, 4).
 
