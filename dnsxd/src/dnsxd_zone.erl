@@ -193,6 +193,19 @@ add_soa(#dnsxd_zone{soa_param = #dnsxd_soa_param{mname = MName,
 			   minimum = Min},
     add_soa(Zone, Serials, Data).
 
+%% clause only for empty zones
+add_soa(#dnsxd_zone{name = Name, rr = RRs} = Zone, [],
+	#dns_rrdata_soa{minimum = TTL} = Data) ->
+    RR = #dnsxd_rr{incept = dns:unix_time(),
+		   expire = undefined,
+		   name = Name,
+		   class = ?DNS_CLASS_IN,
+		   type = ?DNS_TYPE_SOA,
+		   ttl = TTL,
+		   data = Data#dns_rrdata_soa{serial = 0}},
+    NewRRs = [RR|RRs],
+    Zone#dnsxd_zone{rr = NewRRs};
+%% clauses for non-empty zones
 add_soa(#dnsxd_zone{name = Name, rr = RRs} = Zone,
 	[Serial], #dns_rrdata_soa{minimum = TTL} = Data) ->
     RR = #dnsxd_rr{incept = Serial,
