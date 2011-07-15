@@ -16,6 +16,7 @@
 -record(dnsxd_tsig_ctx, {zonename, keyname, alg, secret, mac, msgid}).
 
 -record(dnsxd_zone, {name,
+		     enabled = false,
 		     rr,
 		     serials,
 		     axfr_enabled,
