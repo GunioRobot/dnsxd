@@ -156,7 +156,8 @@ ad(#ctx{rr = RRs} = Ctx, An, Au, Ad) ->
 		  Dname = dns:dname_to_lower(DnameM),
 		  NewTargets = [ erlang:phash2({Dname, Type})
 				 || Type <- [?DNS_TYPE_SRV, ?DNS_TYPE_TXT,
-					     ?DNS_TYPE_A, ?DNS_TYPE_AAAA] ],
+					     ?DNS_TYPE_A, ?DNS_TYPE_AAAA,
+					     ?DNS_TYPE_DS ] ],
 		  NewTargets ++ Acc;
 	     (_, Acc) -> Acc
 	  end,
