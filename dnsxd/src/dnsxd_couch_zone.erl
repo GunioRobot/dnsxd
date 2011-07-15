@@ -21,7 +21,7 @@
 -include("dnsxd_couch.hrl").
 
 %% API
--export([get/1, get/2, put/1, update/5]).
+-export([get/1, get/2, put/1, put/2, update/5, change/2]).
 
 -define(ERL_REC_TAG, <<"dnsxd_couch_rec">>).
 
@@ -52,7 +52,7 @@ get(DbRef, ZoneName) ->
 get(DbRef, ZoneName, Zone, Revs) -> get(DbRef, ZoneName, Zone, Revs, []).
 
 get(DbRef, _ZoneName, Zone, [], DelDocs) ->
-    case put(DbRef, Zone) of
+    case ?MODULE:put(DbRef, Zone) of
 	ok ->
 	    case couchbeam:delete_docs(DbRef, DelDocs) of
 		{ok, _} -> {ok, Zone};
@@ -77,14 +77,16 @@ get(DbRef, ZoneName, Zone, [Rev|Revs], DelDocs) ->
 
 put(#dnsxd_couch_zone{} = Zone) ->
     case dnsxd_couch_lib:get_db() of
-	{ok, DbRef} ->
-	    Doc = encode(Zone),
-	    case couchbeam:save_doc(DbRef, Doc) of
-		{ok, _} ->
-		    ?DNSXD_COUCH_SERVER ! write,
-		    ok;
-		{error, _Reason} = Error -> Error
-	    end;
+	{ok, DbRef} -> ?MODULE:put(DbRef, Zone);
+	{error, _Reason} = Error -> Error
+    end.
+
+put(DbRef, #dnsxd_couch_zone{} = Zone) ->
+    Doc = encode(Zone),
+    case couchbeam:save_doc(DbRef, Doc) of
+	{ok, _} ->
+	    ?DNSXD_COUCH_SERVER ! write,
+	    ok;
 	{error, _Reason} = Error -> Error
     end.
 
@@ -127,6 +129,185 @@ update(#dnsxd_couch_zone{rr = RRs, tombstone_period = TombstonePeriod} = Zone,
 	    end;
 	Rcode when is_atom(Rcode) -> {ok, Rcode}
     end.
+
+change(ZoneName, Changes) ->
+    {ok, DbRef} = dnsxd_couch_lib:get_db(),
+    Create = proplists:get_bool(create_zone, Changes),
+    Delete = proplists:get_bool(delete_zone, Changes),
+    case ?MODULE:get(DbRef, ZoneName) of
+	{ok, #dnsxd_couch_zone{}} when Create -> {error, exists};
+	{ok, #dnsxd_couch_zone{name = Id, rev = Rev}} when Delete ->
+	    Doc = {[{<<"_id">>, Id},{<<"_rev">>, Rev}]},
+	    case couchbeam:delete_doc(DbRef, Doc) of
+		{ok, _} -> ok;
+		{error, _Reason} = Error -> Error
+	    end;
+	{ok, #dnsxd_couch_zone{} = Zone} -> change(DbRef, Zone, Changes);
+	{error, not_found} when Create ->
+	    Mname = <<"ns.", ZoneName/binary>>,
+	    Rname = <<"hostmaster.", ZoneName/binary>>,
+	    SOAParam = #dnsxd_couch_sp{mname = Mname, rname = Rname,
+				       refresh = 3600, retry = 3600,
+				       expire = 3600, minimum = 120},
+	    Zone = #dnsxd_couch_zone{name = ZoneName, soa_param = SOAParam},
+	    change(DbRef, Zone, Changes);
+	{error, _Reason} = Error -> Error
+    end.
+
+change(DbRef, #dnsxd_couch_zone{} = Zone, []) -> ?MODULE:put(DbRef, Zone);
+change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys} = Zone,
+       [{add_tsig_key, #dnsxd_tsig_key{id = Id,
+				       name = Name,
+				       secret = Secret,
+				       enabled = Enabled,
+				       dnssd_only = DNSSDOnly
+				      }}|Changes]) ->
+    Active = lists:filter(fun is_active/1, Keys),
+    IdInUse = lists:keymember(Id, #dnsxd_couch_tk.name, Keys),
+    NameInUse = lists:keymember(Name, #dnsxd_couch_tk.name, Active),
+    if IdInUse -> {display_error, {"TSIG ID ~s conflicts", [Id]}};
+       NameInUse -> {display_error, {"TSIG name ~s conflicts", [Name]}};
+       true ->
+	    NewKey = #dnsxd_couch_tk{id = Id,
+				     name = Name,
+				     secret = base64:encode(Secret),
+				     enabled = Enabled,
+				     dnssd_only = DNSSDOnly},
+	    NewKeys = [NewKey|Keys],
+	    NewZone = Zone#dnsxd_couch_zone{tsig_keys = NewKeys},
+	    change(DbRef, NewZone, Changes)
+    end;
+change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys,
+				tombstone_period = TombstonePeriod} = Zone,
+       [{delete_tsig_key, Name}|Changes]) ->
+    {Active, Expired} = lists:partition(fun is_active/1, Keys),
+    case lists:keytake(Name, #dnsxd_couch_tk.name, Active) of
+	{value, #dnsxd_couch_tk{} = Key, NewActive} ->
+	    Tombstone = TombstonePeriod + dns:unix_time(),
+	    NewKey = Key#dnsxd_couch_tk{tombstone = Tombstone},
+	    NewKeys = Expired ++ [NewKey|NewActive],
+	    NewZone = Zone#dnsxd_couch_zone{tsig_keys = NewKeys},
+	    change(DbRef, NewZone, Changes);
+	false ->
+	    {display_error, {"No TSIG named ~s", [Name]}}
+    end;
+change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys} = Zone,
+       [{Action, {Name, Value}}|Changes])
+  when Action =:= tsig_key_secret orelse
+       Action =:= tsig_key_enabled orelse
+       Action =:= tsig_key_dnssdonly ->
+    {Active, Expired} = lists:partition(fun is_active/1, Keys),
+    case lists:keytake(Name, #dnsxd_couch_tk.name, Active) of
+	{value, #dnsxd_couch_tk{} = Key, NewActive} ->
+	    NewKey = case Action of
+			 tsig_key_secret when is_binary(Value) ->
+			     Key#dnsxd_couch_tk{secret = base64:encode(Value)};
+			 tsig_key_enabled when is_boolean(Value) ->
+			     Key#dnsxd_couch_tk{enabled = Value};
+			 tsig_key_dnssdonly when is_boolean(Value) ->
+			     Key#dnsxd_couch_tk{dnssd_only = Value};
+			 _ -> undefined
+		     end,
+	    case NewKey =:= undefined of
+		true -> {error, {bad_value, Action, Value}};
+		false ->
+		    NewKeys = Expired ++ [NewKey|NewActive],
+		    NewZone = Zone#dnsxd_couch_zone{tsig_keys = NewKeys},
+		    change(DbRef, NewZone, Changes)
+	    end;
+	false -> {display_error, {"No TSIG named ~s", [Name]}}
+    end;
+change(DbRef, #dnsxd_couch_zone{} = Zone, [{dnssec_enabled, Bool}|Changes])
+  when is_boolean(Bool) ->
+    NewZone = Zone#dnsxd_couch_zone{dnssec_enabled = Bool,
+				    dnssec_enabled_set = dns:unix_time()},
+    change(DbRef, NewZone, Changes);
+change(DbRef, #dnsxd_couch_zone{dnssec_keys = Keys,
+				tombstone_period = TombstonePeriod} = Zone,
+       [{delete_dnssec_key, Id}|Changes]) ->
+    case lists:keytake(Id, #dnsxd_couch_dk.id, Keys) of
+	{value, #dnsxd_couch_dk{} = Key, Keys0} ->
+	    Tombstone = TombstonePeriod + dns:unix_time(),
+	    NewKey = Key#dnsxd_couch_dk{tombstone = Tombstone},
+	    NewKeys = [NewKey|Keys0],
+	    NewZone = Zone#dnsxd_couch_zone{dnssec_keys = NewKeys},
+	    change(DbRef, NewZone, Changes);
+	false ->
+	    {display_error, {"No DNSSEC key with ID ~s~n", [Id]}}
+    end;
+change(DbRef, #dnsxd_couch_zone{
+	 dnssec_nsec3_param = #dnsxd_couch_nsec3param{} = NSEC3Param} = Zone,
+       [{nsec3salt, Salt}|Changes]) when is_binary(Salt) ->
+    NewNSEC3Param = NSEC3Param#dnsxd_couch_nsec3param{salt = Salt},
+    NewZone = Zone#dnsxd_couch_zone{dnssec_nsec3_param = NewNSEC3Param,
+				    dnssec_nsec3_param_set = dns:unix_time()},
+    change(DbRef, NewZone, Changes);
+change(DbRef, #dnsxd_couch_zone{
+	 dnssec_nsec3_param = #dnsxd_couch_nsec3param{} = NSEC3Param} = Zone,
+       [{nsec3salt, Iter}|Changes]) when is_integer(Iter) ->
+    NewNSEC3Param = NSEC3Param#dnsxd_couch_nsec3param{iter = Iter},
+    NewZone = Zone#dnsxd_couch_zone{dnssec_nsec3_param = NewNSEC3Param,
+				    dnssec_nsec3_param_set = dns:unix_time()},
+    change(DbRef, NewZone, Changes);
+change(DbRef, #dnsxd_couch_zone{} = Zone, [{dnssec_siglife, SigLife}|Changes])
+  when is_integer(SigLife) ->
+    NewZone = Zone#dnsxd_couch_zone{dnssec_siglife = SigLife,
+				    dnssec_siglife_set = dns:unix_time()},
+    change(DbRef, NewZone, Changes);
+change(DbRef, #dnsxd_couch_zone{dnssec_keys = Keys} = Zone,
+       [{add_dnssec_key, #dnsxd_dnssec_key{id = Id,
+					   incept = Incept,
+					   expire = Expire,
+					   alg = ?DNS_ALG_NSEC3RSASHA1 = Alg,
+					   ksk = KSK,
+					   key = [<<_:32, E/binary>>,
+						  <<_:32, N/binary>>,
+						  <<_:32, D/binary>>]
+					  }}|Changes]) ->
+    case lists:keymember(Id, #dnsxd_couch_dk.id, Keys) of
+	true ->
+	    {display_error, {"Key ID ~s conflicts with existing key~n", [Id]}};
+	false ->
+	    Data = #dnsxd_couch_dk_rsa{e = base64:encode(E),
+				       n = base64:encode(N),
+				       d = base64:encode(D)},
+	    NewKey = #dnsxd_couch_dk{id = Id,
+				     incept = Incept,
+				     expire = Expire,
+				     alg = Alg,
+				     ksk = KSK,
+				     data = Data},
+	    NewKeys = [NewKey|Keys],
+	    NewZone = Zone#dnsxd_couch_zone{dnssec_keys = NewKeys},
+	    change(DbRef, NewZone, Changes)
+    end;
+change(DbRef, #dnsxd_couch_zone{soa_param = SOAP} = Zone,
+       [{Field, Value}|Changes])
+  when Field =:= mname orelse Field =:= rname orelse Field =:= refresh orelse
+       Field =:= retry orelse Field =:= expire orelse Field =:= minimum ->
+    NewSOAP = case Field of
+		  mname -> SOAP#dnsxd_couch_sp{mname = Value};
+		  rname -> SOAP#dnsxd_couch_sp{rname = Value};
+		  refresh -> SOAP#dnsxd_couch_sp{refresh = Value};
+		  retry -> SOAP#dnsxd_couch_sp{retry = Value};
+		  expire -> SOAP#dnsxd_couch_sp{expire = Value};
+		  minimum -> SOAP#dnsxd_couch_sp{minimum = Value}
+	      end,
+    NewZone = Zone#dnsxd_couch_zone{soa_param = NewSOAP,
+				    soa_param_set = dns:unix_time()},
+    change(DbRef, NewZone, Changes);
+change(DbRef, #dnsxd_couch_zone{} = Zone, [{zone_enabled, true}|Changes]) ->
+    NewZone = Zone#dnsxd_couch_zone{enabled = true},
+    change(DbRef, NewZone, Changes);
+change(DbRef, #dnsxd_couch_zone{} = Zone, [create_zone|Changes]) ->
+    change(DbRef, Zone, Changes);
+change(_DbRef, _Zone, [Change|_]) -> {error, {unknown_change, Change}}.
+
+%% is_active = whether term is live as far as dnsxd is concerned
+%% is_current = whether term is live as far as dnsxd_couch is concerned
+%% the difference? dnsxd_couch keeps dead items around a little while to
+%% prevent zombies from showing up
+is_active(#dnsxd_couch_tk{tombstone = Tombstone}) -> not is_integer(Tombstone).
 
 %%%===================================================================
 %%% Internal functions

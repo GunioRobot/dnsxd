@@ -26,6 +26,9 @@
 
 -export([update_zone/6, log/1]).
 
+-export([dnsxd_admin_zone_list/0, dnsxd_admin_get_zone/1,
+	 dnsxd_admin_change_zone/2]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
@@ -62,6 +65,28 @@ log(Props) ->
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
     {ok, _} = couchbeam:save_doc(DbRef, Doc),
     ?DNSXD_COUCH_SERVER ! write.
+
+dnsxd_admin_zone_list() ->
+    {ok, DbRef} = dnsxd_couch_lib:get_db(),
+    ViewName = {?DNSXD_COUCH_DESIGNDOC, "dnsxd_couch_zone"},
+    {ok, InitView} = couchbeam:view(DbRef, ViewName),
+    Fun = fun({Props}, Acc) ->
+		  ZoneName = get_value(<<"id">>, Props),
+		  Enabled = get_value(<<"key">>, Props),
+		  [{ZoneName, Enabled}|Acc]
+	  end,
+    {ok, couchbeam_view:fold(InitView, Fun)}.
+
+dnsxd_admin_get_zone(ZoneName) ->
+    case dnsxd_couch_zone:get(ZoneName) of
+	{ok, #dnsxd_couch_zone{} = CouchZone} ->
+	    Zone = to_dnsxd_zone(CouchZone, true),
+	    {ok, Zone};
+	{error, _Reason} = Error -> Error
+    end.
+
+dnsxd_admin_change_zone(ZoneName, [_|_] = Changes) when is_binary(ZoneName) ->
+    dnsxd_couch_zone:change(ZoneName, Changes).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -248,6 +273,8 @@ couch_dk_to_dnsxd_key(#dnsxd_couch_dk{id = Id, incept = Incept, expire = Expire,
 cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;
 cancel_timer(undefined) -> ok.
 
+to_dnsxd_zone(#dnsxd_couch_zone{} = Zone) -> to_dnsxd_zone(Zone, false).
+
 to_dnsxd_zone(#dnsxd_couch_zone{name = Name,
 				rr = CouchRRs,
 				axfr_enabled = AXFREnabled,
@@ -257,12 +284,12 @@ to_dnsxd_zone(#dnsxd_couch_zone{name = Name,
 				dnssec_enabled = DNSSEC,
 				dnssec_keys = CouchDNSSECKeys,
 				dnssec_nsec3_param = NSEC3Param,
-				dnssec_siglife = SigLife}) ->
+				dnssec_siglife = SigLife}, KeepDisabled) ->
     RRs = [ to_dnsxd_rr(RR) || RR <- CouchRRs ],
     Serials = dnsxd_couch_lib:get_serials(CouchRRs),
     TSIGKeys = [ couch_tk_to_dnsxd_key(Key)
 		 || Key <- CouchTSIGKeys,
-		    Key#dnsxd_couch_tk.enabled,
+		    Key#dnsxd_couch_tk.enabled orelse KeepDisabled,
 		    not is_integer(Key#dnsxd_couch_tk.tombstone) ],
     DNSSECKeys = [ couch_dk_to_dnsxd_key(Key)
 		   || Key <- CouchDNSSECKeys,
