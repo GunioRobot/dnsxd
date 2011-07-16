@@ -24,8 +24,8 @@
 
 main(NameArg, CookieArg, Args)
   when is_list(NameArg) andalso is_list(CookieArg) andalso is_list(Args) ->
-    case getopt:parse(options(), Args) of
-	{ok, {Opts0, []}} ->
+    case dnsxd_shell_lib:parse_opts(options(), Args) of
+	{ok, Opts0} ->
 	    case proplists:get_bool(help, Opts0) of
 		true -> usage(0);
 		false ->
@@ -33,15 +33,7 @@ main(NameArg, CookieArg, Args)
 		    {ok, Node} = dnsxd_shell_lib:setup_dist(NameArg, CookieArg),
 		    main(Node, ZoneName, Opts1)
 	    end;
-	{error, {missing_option_arg, ArgName}} ->
-	    io:format("'~s' option requires an argument:~n~n", [ArgName]),
-	    usage(1);
-	{error, {invalid_option_arg, {ArgName, ArgValue}}} ->
-	    Fmt = "~p is not a valid argument to option '~s':~n~n",
-	    FmtArgs = [ArgValue, ArgName],
-	    io:format(Fmt, FmtArgs),
-	    usage(1);
-	_ -> usage(1)
+	error -> usage(1)
     end;
 main(Node, ZoneName, [_|_] = Opts0) when is_atom(Node) ->
     {DisplayList, Opts1} = dnsxd_shell_lib:take_bool_opt(list, Opts0),

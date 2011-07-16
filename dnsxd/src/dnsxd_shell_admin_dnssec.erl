@@ -25,8 +25,8 @@
 main(NameArg, CookieArg, Args)
   when is_list(NameArg) andalso is_list(CookieArg) andalso is_list(Args) ->
     ok = application:start(cutkey),
-    case getopt:parse(options(), Args) of
-	{ok, {Opts, []}} ->
+    case dnsxd_shell_lib:parse_opts(options(), Args) of
+	{ok, Opts} ->
 	    case proplists:get_bool(help, Opts) of
 		true -> usage(0);
 		false ->
@@ -34,10 +34,7 @@ main(NameArg, CookieArg, Args)
 		    {ok, Node} = dnsxd_shell_lib:setup_dist(NameArg, CookieArg),
 		    main(Node, ZoneName, Request)
 	    end;
-	{error, {invalid_option, Opt}} ->
-	    io:format("Invalid option: ~s~n", [Opt]),
-	    usage(1);
-	_ -> usage(1)
+	error -> usage(1)
     end;
 main(Node, ZoneName, [_|_] = Changes)
   when is_atom(Node) andalso is_binary(ZoneName) ->

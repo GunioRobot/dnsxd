@@ -24,8 +24,8 @@
 
 main(NameArg, CookieArg, Args)
   when is_list(NameArg) andalso is_list(CookieArg) andalso is_list(Args) ->
-    case getopt:parse(options(), Args) of
-	{ok, {Opts, []}} ->
+    case dnsxd_shell_lib:parse_opts(options(), Args) of
+	{ok, Opts} ->
 	    case proplists:get_bool(help, Opts) of
 		true -> usage(0);
 		false ->
@@ -33,7 +33,7 @@ main(NameArg, CookieArg, Args)
 		    {ok, Node} = dnsxd_shell_lib:setup_dist(NameArg, CookieArg),
 		    main(Node, ZoneName, Request)
 	    end;
-	_ -> usage(1)
+	error -> usage(1)
     end;
 main(Node, ZoneName, Opts0) when is_atom(Node) andalso is_binary(ZoneName) ->
     {List, Opts1} = dnsxd_shell_lib:take_bool_opt(list, Opts0),

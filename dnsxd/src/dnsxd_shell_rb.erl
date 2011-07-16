@@ -32,22 +32,24 @@ main(_NameArg, _CookieArg, EtcDir, Args) ->
 	    LogDir = proplists:get_value(error_logger_mf_dir, SaslSettings),
 	    case filelib:is_dir(LogDir) of
 		true -> main(LogDir, Args);
-		false -> fail("SASL error_logger_mf_dir is not valid")
+		false ->
+		    Msg = "SASL error_logger_mf_dir is not valid",
+		    dnsxd_shell_lib:fail(Msg)
 	    end;
 	{ok, _} ->
-	    fail("Failed to load configuration from ~s: Bad term~n",
-		 [AppConfigFn]);
+	    Fmt = "Failed to load configuration from ~s: Bad term~n",
+	    dnsxd_shell_lib:fail(Fmt, [AppConfigFn]);
 	{error, Reason} ->
-	    fail("Failed to load configuration from ~s: ~s~n",
-		 [AppConfigFn, file:format_error(Reason)])
+	    Fmt = "Failed to load configuration from ~s: ~s~n",
+	    dnsxd_shell_lib:fail(Fmt, [AppConfigFn, file:format_error(Reason)])
     end.
 
 main(LogDir, ShellArgs) ->
     application:set_env(sasl, errlog_type, error),
     application:set_env(sasl, sasl_error_logger, false),
     ok = application:start(sasl),
-    case getopt:parse(options(), ShellArgs) of
-	{ok, {Opts, []}} ->
+    case dnsxd_shell_lib:parse_opts(options(), ShellArgs) of
+	{ok, Opts} ->
 	    case proplists:get_bool(help, Opts) of
 		true -> usage(0);
 		false ->
@@ -60,11 +62,13 @@ main(LogDir, ShellArgs) ->
 				false -> run_rb(LogDir, [Max,{type, Types}])
 			    end;
 			_ ->
-			    fail("Maximum number of reports must be a number "
-				 "greater than 0.")
+			    dnsxd_shell_lib:fail(
+			      "Maximum number of reports must be a number "
+			      "greater than 0."
+			     )
 		    end
 	    end;
-	_ -> usage(1)
+	error -> usage(1)
     end.
 
 run_rb(LogDir, Args) ->
@@ -75,10 +79,11 @@ run_rb(LogDir, Args) ->
 	    io:format("\n"),
 	    ?EXIT_DELAY;
 	{error, {"cannot read the index file",_}} ->
-	    fail("rb failed to start due to a bad or missing index. This is "
-		 "normal if no logs have been written to disk.");
+	    dnsxd_shell_lib:fail("rb failed to start due to a bad or missing "
+				 "index. This is normal if no logs have been "
+				 "written to disk.");
 	{error, Reason} ->
-	    fail("rb failed to start:~n~p", [Reason])
+	    dnsxd_shell_lib:fail("rb failed to start:~n~p", [Reason])
     end.
 
 options() ->
@@ -96,12 +101,4 @@ options() ->
 
 usage(ExitCode) ->
     getopt:usage(options(), "dnsxd-rb"),
-    ?EXIT_DELAY,
-    erlang:halt(ExitCode).
-
-fail(Fmt) -> fail(Fmt, "").
-fail(Fmt, Args) -> fail(Fmt, Args, 1).
-fail(Fmt, Args, ExitCode) ->
-    io:format("Error: " ++ Fmt ++ "\n", Args),
-    ?EXIT_DELAY,
-    erlang:halt(ExitCode).
+    dnsxd_shell_lib:halt(ExitCode).
