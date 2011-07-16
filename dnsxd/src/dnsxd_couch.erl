@@ -67,13 +67,15 @@ dnsxd_log(Props) ->
 dnsxd_admin_zone_list() ->
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
     ViewName = {?DNSXD_COUCH_DESIGNDOC, "dnsxd_couch_zone"},
-    {ok, InitView} = couchbeam:view(DbRef, ViewName),
     Fun = fun({Props}, Acc) ->
 		  ZoneName = get_value(<<"id">>, Props),
 		  Enabled = get_value(<<"key">>, Props),
 		  [{ZoneName, Enabled}|Acc]
 	  end,
-    {ok, couchbeam_view:fold(InitView, Fun)}.
+    case couchbeam_view:fold(Fun, [], DbRef, ViewName) of
+	Zones when is_list(Zones) -> {ok, Zones};
+	{error, _Reason} = Error -> Error
+    end.
 
 dnsxd_admin_get_zone(ZoneName) ->
     case dnsxd_couch_zone:get(ZoneName) of
@@ -164,7 +166,7 @@ handle_info({Ref, {error, Error}}, #state{db_ref = Ref} = State) ->
     {ok, _} = timer:send_after(0, self(), {Ref, done}),
     NewState = State#state{db_lost = true},
     {noreply, NewState};
-handle_info({Ref, {change, {Props}}}, #state{db_ref = Ref} = State) ->
+handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
     Name = proplists:get_value(<<"id">>, Props),
     Exists = dnsxd:zone_loaded(Name),
     Message = case load_zone(Name) of
@@ -231,7 +233,6 @@ update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
 init_load_zones() ->
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
     ViewName = {?DNSXD_COUCH_DESIGNDOC, "dnsxd_couch_zone"},
-    {ok, InitView} = couchbeam:view(DbRef, ViewName, [{key, true}]),
     Fun = fun({Props}) ->
 		  ZoneName = get_value(<<"id">>, Props),
 		  case dnsxd_couch_zone:get(DbRef, ZoneName) of
@@ -242,7 +243,7 @@ init_load_zones() ->
 		      {error, not_zone} -> ok
 		  end
 	  end,
-    ok = couchbeam_view:foreach(InitView, Fun).
+    ok = couchbeam_view:foreach(Fun, DbRef, ViewName, [{key, true}]).
 
 couch_tk_to_dnsxd_key(#dnsxd_couch_tk{id = Id,
 				      name = Name,
@@ -356,12 +357,10 @@ setup_monitor(Since) ->
     end.
 
 setup_monitor(DbRef, Since) when is_tuple(DbRef) ->
-    Opts = [{since, Since},
-	    {feed, "continuous"},
-	    {heartbeat, true},
+    Opts = [{since, Since}, continuous, heartbeat,
 	    {filter, ?DNSXD_COUCH_DESIGNDOC "/dnsxd_couch_zone"}],
-    case couchbeam:changes_wait(DbRef, self(), Opts) of
-	{ok, Ref} -> {ok, Ref, Since};
+    case couchbeam_changes:stream(DbRef, self(), Opts) of
+	{ok, Ref, _ChangesPid} -> {ok, Ref, Since};
 	{error, _Reason} = Error -> Error
     end.
 
