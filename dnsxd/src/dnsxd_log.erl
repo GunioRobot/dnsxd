@@ -37,7 +37,7 @@ log({SrcIP, SrcPort}, {DstIP, DstPort}, Props) ->
 			      {dst_port, DstPort}
 			      |Props]),
     Datastore = dnsxd:datastore(),
-    Datastore:log(NewProps).
+    Datastore:dnsxd_log(NewProps).
 
 prepare_props(List) when is_list(List) ->
     lists:sort([ prepare_props(Prop) || Prop <- List ]);

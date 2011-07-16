@@ -99,8 +99,8 @@ update(MsgCtx,
 	PreReqTuple = lists:map(PreReqFun, PreReqRR),
 	UpdateTuple = lists:map(UpdateFun, UpdateRR),
 	Datastore = dnsxd:datastore(),
-	RC = Datastore:update_zone(MsgCtx, Key, ZoneName, ZoneClass,
-				   PreReqTuple, UpdateTuple),
+	RC = Datastore:dnsxd_dns_update(MsgCtx, Key, ZoneName, ZoneClass,
+					PreReqTuple, UpdateTuple),
 	{RC, LeaseLength}
     catch throw:formerr ->
 	    {formerr, undefined}
