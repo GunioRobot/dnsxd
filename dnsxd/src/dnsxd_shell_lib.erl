@@ -93,18 +93,11 @@ valid_dname(Name) when is_binary(Name) ->
 	false -> false
     end;
 valid_dname([]) -> true;
-valid_dname([Label|Labels]) ->
-    case valid_label(Label) of
-	true -> valid_dname(Labels);
-	false -> false
-    end.
+valid_dname([Label|Labels]) -> valid_label(Label) andalso valid_dname(Labels).
 
 valid_label(Label) ->
     Size = byte_size(Label),
-    case Size > 0 andalso Size < 64 of
-	true -> no_uppercase(Label);
-	false -> false
-    end.
+    (Size > 0 andalso Size < 64) andalso no_uppercase(Label).
 
 no_uppercase(<<>>) -> true;
 no_uppercase(<<C, _/binary>>) when C >= $A andalso C =< $Z -> false;

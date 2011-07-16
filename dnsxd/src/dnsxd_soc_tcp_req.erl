@@ -26,7 +26,7 @@
 -record(state, {ifspec, socket, ctx, timeout}).
 
 start_link(#dnsxd_if_spec{protocol = tcp} = IfSpec) ->
-    Pid = spawn_link(?MODULE, init, [IfSpec]),
+    Pid = spawn_link(fun() -> ?MODULE:init(IfSpec) end),
     {ok, Pid}.
 
 init(#dnsxd_if_spec{protocol = tcp, ip = DstIP, port = DstPort} = IfSpec) ->

@@ -162,7 +162,7 @@ change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys} = Zone,
 				       enabled = Enabled,
 				       dnssd_only = DNSSDOnly
 				      }}|Changes]) ->
-    Active = lists:filter(fun is_active/1, Keys),
+    Active = [Key || Key <- Keys, is_active(Key)],
     IdInUse = lists:keymember(Id, #dnsxd_couch_tk.name, Keys),
     NameInUse = lists:keymember(Name, #dnsxd_couch_tk.name, Active),
     if IdInUse -> {display_error, {"TSIG ID ~s conflicts", [Id]}};

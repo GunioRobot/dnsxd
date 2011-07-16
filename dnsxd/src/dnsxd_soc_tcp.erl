@@ -23,7 +23,7 @@
 
 start_link(#dnsxd_if_spec{protocol = tcp} = IfSpec, Socket, ReqSupPid)
   when is_pid(ReqSupPid) ->
-    Pid = spawn_link(?MODULE, loop, [IfSpec, Socket, ReqSupPid]),
+    Pid = spawn_link(fun() -> ?MODULE:loop(IfSpec, Socket, ReqSupPid) end),
     {ok, Pid}.
 
 loop(#dnsxd_if_spec{} = IfSpec, Socket, ReqSupPid) when is_pid(ReqSupPid) ->

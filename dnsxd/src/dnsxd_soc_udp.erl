@@ -23,7 +23,8 @@
 
 start_link(#dnsxd_if_spec{protocol = udp} = IfSpec, ReqSupPid)
   when is_pid(ReqSupPid) ->
-    Pid = spawn_link(?MODULE, init, [self(), IfSpec, ReqSupPid]),
+    Self = self(),
+    Pid = spawn_link(fun() -> ?MODULE:init(Self, IfSpec, ReqSupPid) end),
     receive {Pid, ok} -> {ok, Pid} end.
 
 init(Parent, #dnsxd_if_spec{protocol = udp, ip = IP, port = Port} = IfSpec,

@@ -34,7 +34,7 @@
 %%%===================================================================
 
 start_link(#dnsxd_if_spec{protocol = Protocol} = IfSpec) ->
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    Return = {ok, SupPid} = supervisor:start_link(?MODULE, []),
     ReqSupSpec = {dnsxd_soc_req_sup,
 		  {dnsxd_soc_req_sup, start_link, [IfSpec]},
 		  permanent, 5000, supervisor, [dnsxd_soc_req_sup]},
@@ -46,7 +46,7 @@ start_link(#dnsxd_if_spec{protocol = Protocol} = IfSpec) ->
     SocSpec = {Module, {Module, start_link, [IfSpec, ReqSupPid]},
 	       permanent, 5000, Type, [Module]},
     {ok, _Pid} = supervisor:start_child(SupPid, SocSpec),
-    {ok, SupPid}.
+    Return.
 
 %%%===================================================================
 %%% supervisor callbacks

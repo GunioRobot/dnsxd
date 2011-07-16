@@ -22,7 +22,7 @@
 -export([start_link/1, init/1]).
 
 start_link(#dnsxd_if_spec{protocol = udp} = IfSpec) ->
-    Pid = spawn_link(?MODULE, init, [IfSpec]),
+    Pid = spawn_link(fun() -> ?MODULE:init(IfSpec) end),
     {ok, Pid}.
 
 init(#dnsxd_if_spec{protocol = udp, ip = DstIP, port = DstPort}) ->

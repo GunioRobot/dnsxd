@@ -26,7 +26,7 @@
 log(MsgCtx, Props) ->
     Src = dnsxd_op_ctx:src(MsgCtx),
     Dst = dnsxd_op_ctx:dst(MsgCtx),
-    spawn(?MODULE, log, [Src, Dst, Props]).
+    spawn(fun() -> ?MODULE:log(Src, Dst, Props) end).
 
 log({SrcIP, SrcPort}, {DstIP, DstPort}, Props) ->
     NewProps = prepare_props([{time, dns:unix_time()},
