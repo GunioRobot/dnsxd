@@ -39,25 +39,41 @@ init([]) ->
     SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
     Restart = permanent,
     Shutdown = 2000,
+    LogSpec = {dnsxd_log_sup, {dnsxd_log_sup, start_link, []},
+	       Restart, Shutdown, supervisor, [dnsxd_log_sup]},
     DsSpec = {dnsxd_ds_server, {dnsxd_ds_server, start_link, []},
 	      Restart, Shutdown, worker, [dnsxd_ds_server]},
     LLQSpec = {dnsxd_llq_sup, {dnsxd_llq_sup, start_link, []},
 	       Restart, Shutdown, supervisor, [dnsxd_llq_sup]},
     SocSpec = {dnsxd_socs_sup, {dnsxd_socs_sup, start_link, []},
 	       Restart, Shutdown, supervisor, [dnsxd_socs_sup]},
-    Mod = dnsxd:datastore(),
-    Specs = case should_supervise(Mod) of
-		true ->
-		    ModSpec = {Mod, {Mod, start_link, []}, Restart, Shutdown,
-			       supervise_type(Mod), [Mod]},
-		    [DsSpec, LLQSpec, ModSpec, SocSpec];
-		false -> [DsSpec, LLQSpec, SocSpec]
-	    end,
+    AdditionalSpecs = specs_for_modules([dnsxd:log(), dnsxd:datastore()]),
+    Specs = [LogSpec, DsSpec, LLQSpec] ++ AdditionalSpecs ++ [SocSpec],
     {ok, {SupFlags, Specs}}.
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+specs_for_modules(Modules) -> specs_for_modules(Modules, [], []).
+
+specs_for_modules([], _Setup, Specs) -> lists:reverse(Specs);
+specs_for_modules([undefined|Modules], Setup, Specs) ->
+    specs_for_modules(Modules, Setup, Specs);
+specs_for_modules([Module|Modules], Setup, Specs) ->
+    case lists:member(Module, Setup) of
+	true -> specs_for_modules(Modules, Setup, Specs);
+	false ->
+	    NewSetup = [Module|Setup],
+	    case should_supervise(Module) of
+		true ->
+		    NewSpec = {Module, {Module, start_link, []}, permanent,
+			       2000, supervise_type(Module), [Module]},
+		    NewSpecs = [NewSpec|Specs],
+		    specs_for_modules(Modules, NewSetup, NewSpecs);
+		false -> specs_for_modules(Modules, NewSetup, Specs)
+	    end
+    end.
 
 should_supervise(Mod) ->
     is_supervisor(Mod) orelse is_gen_server(Mod).

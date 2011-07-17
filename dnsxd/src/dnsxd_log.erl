@@ -21,32 +21,39 @@
 -include("dnsxd.hrl").
 
 %% API
--export([log/2, log/3]).
+-export([log/1, log/2]).
 
-log(MsgCtx, Props) ->
-    Src = dnsxd_op_ctx:src(MsgCtx),
-    Dst = dnsxd_op_ctx:dst(MsgCtx),
-    spawn(fun() -> ?MODULE:log(Src, Dst, Props) end).
+-export([start_link/1]).
 
-log({SrcIP, SrcPort}, {DstIP, DstPort}, Props) ->
-    NewProps = prepare_props([{time, dns:unix_time()},
-			      {node, node()},
-			      {src_ip, format_ip(SrcIP)},
-			      {src_port, SrcPort},
-			      {dst_ip, format_ip(DstIP)},
-			      {dst_port, DstPort}
-			      |Props]),
-    Datastore = dnsxd:datastore(),
-    Datastore:dnsxd_log(NewProps).
+log(Proplist) when is_list(Proplist) ->
+    {ok, _Pid} = supervisor:start_child(dnsxd_log_sup, [Proplist]),
+    ok.
 
-prepare_props(List) when is_list(List) ->
-    lists:sort([ prepare_props(Prop) || Prop <- List ]);
-prepare_props({K, V}) when is_atom(V) ->
-    prepare_props({K, atom_to_binary(V, latin1)});
-prepare_props({K, V}) when is_atom(K) ->
-    prepare_props({atom_to_binary(K, latin1), V});
-prepare_props({K, V} = Prop)
+log(MsgCtx, Props0) when is_list(Props0) ->
+    {SrcIP, SrcPort} = dnsxd_op_ctx:src(MsgCtx),
+    {DstIP, DstPort} = dnsxd_op_ctx:dst(MsgCtx),
+    Props1 = [{src_ip, SrcIP}, {src_port, SrcPort},
+	      {dst_ip, DstIP}, {dst_port, DstPort}|Props0],
+    log(Props1).
+
+start_link(Props) ->
+    Pid = spawn_link(fun() -> prepare_props(Props) end),
+    {ok, Pid}.
+
+prepare_props(Props0) when is_list(Props0) ->
+    Props1 = [{time, dns:unix_time()}, {node, node()}|Props0],
+    Props2 = lists:keysort(1, [prepare_prop(Prop) || Prop <- Props1]),
+    Logger = dnsxd:log(),
+    Logger:dnsxd_log(Props2).
+
+prepare_prop({K, IP}) when K =:= src_ip orelse K =:= dst_ip ->
+    prepare_prop({binary(K), format_ip(IP)});
+prepare_prop({K, V}) when is_atom(V) -> prepare_prop({K, binary(V)});
+prepare_prop({K, V}) when is_atom(K) -> prepare_prop({binary(K), V});
+prepare_prop({K, V} = Prop)
   when is_binary(K) andalso (is_integer(V) orelse is_binary(V)) -> Prop.
+
+binary(Atom) when is_atom(Atom) -> atom_to_binary(Atom, latin1).
 
 format_ip(Tuple) when is_tuple(Tuple) ->
     case list_to_binary(inet_parse:ntoa(Tuple)) of

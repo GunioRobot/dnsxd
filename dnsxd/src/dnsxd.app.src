@@ -32,6 +32,8 @@
 			   {database, "dnsxd_zones"},
 			   {init_timeout, 60000},
 			   {update_attempts, 10}
-			  ]}
+			  ]},
+	 {log_mod, dnsxd_couch},
+	 {log_opts, []}
 	]}
  ]}.

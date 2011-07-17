@@ -30,6 +30,7 @@
 %% config
 -export([get_env/1, get_env/2, set_env/2,
 	 datastore/0, datastore_opts/0,
+	 log/0, log_opts/0,
 	 llq_opts/0, update_opts/0]).
 
 %% zone management
@@ -89,6 +90,12 @@ datastore() ->
 	_ -> throw({bad_config, datastore_mod})
     end.
 
+log() ->
+    case get_env(log_mod) of
+	{ok, Logger} when is_atom(Logger) -> Logger;
+	_ -> datastore()
+    end.
+
 llq_opts() ->
     case dnsxd:get_env(llq_opts) of
 	{ok, List} when is_list(List) -> List;
@@ -108,6 +115,13 @@ datastore_opts() ->
 	{ok, List} when is_list(List) -> List;
 	undefined -> [];
 	_ -> throw({bad_config, datastore_opts})
+    end.
+
+log_opts() ->
+    case dnsxd:get_env(log_opts) of
+	{ok, List} when is_list(List) -> List;
+	undefined -> [];
+	_ -> throw({bad_config, log_opts})
     end.
 
 zone_loaded(ZoneName) -> dnsxd_ds_server:zone_loaded(ZoneName).
