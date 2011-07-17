@@ -22,7 +22,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, new_llq/3, msg_llq/2, zone_changed/1]).
+-export([start_link/1, new_llq/3, msg_llq/2, list_llq/0, list_llq/1,
+	 zone_changed/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -53,6 +54,16 @@ msg_llq(MsgCtx, #dns_message{
 	    dnsxd_llq_server:handle_msg(Pid, MsgCtx, Msg);
 	[] -> {error, nosuchllq}
     end.
+
+list_llq() ->
+    MS = {#llq_ref{id = '$1', zonename = '$2', q = '$3', _ = '_'},
+	  [], [{{'$1', '$2', '$3'}}] },
+    ets:select(?TAB_LLQ, [MS]).
+
+list_llq(ZoneName) when is_binary(ZoneName) ->
+    MS = {#llq_ref{id = '$1', zonename = ZoneName, q = '$3', _ = '_'},
+	  [], [{{'$1', ZoneName, '$3'}}] },
+    ets:select(?TAB_LLQ, [MS]).
 
 zone_changed(ZoneName) ->
     MS = {#llq_ref{zonename = ZoneName, pid = '$1', _ = '_'}, [], ['$1']},
