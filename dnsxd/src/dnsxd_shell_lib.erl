@@ -20,7 +20,8 @@
 -module(dnsxd_shell_lib).
 
 -export([setup_dist/2, fail/1, fail/2, halt/1, valid_dname/1, take_bool_opt/2,
-	 bool_to_enabled/1, render_table/3, render_table/2, parse_opts/2]).
+	 bool_to_enabled/1, render_table/3, render_table/2, parse_opts/2,
+	 format_optparse_error/1]).
 
 -define(TAB_COL_MAX, 76).
 -define(EXIT_DELAY, receive after 500 -> ok end).
@@ -193,13 +194,15 @@ bool_to_enabled(false) -> "disabled".
 parse_opts(Options, Args) ->
     case getopt:parse(Options, Args) of
 	{ok, {ParsedOptions, []}} -> {ok, ParsedOptions};
-	{error, {missing_option_arg, ArgName}} ->
-	    io:format("'~s' option requires an argument:~n~n", [ArgName]),
-	    error;
-	{error, {invalid_option_arg, {ArgName, ArgValue}}} ->
-	    Fmt = "~p is not a valid argument to option '~s':~n~n",
-	    FmtArgs = [ArgValue, ArgName],
-	    io:format(Fmt, FmtArgs),
-	    error;
-	_ -> error
+	Error -> format_optparse_error(Error)
     end.
+
+format_optparse_error({error, {missing_option_arg, ArgName}}) ->
+    io:format("'~s' option requires an argument:~n~n", [ArgName]),
+    error;
+format_optparse_error({error, {invalid_option_arg, {ArgName, ArgValue}}}) ->
+    Fmt = "~p is not a valid argument to option '~s':~n~n",
+    FmtArgs = [ArgValue, ArgName],
+    io:format(Fmt, FmtArgs),
+    error;
+format_optparse_error(_) -> error.

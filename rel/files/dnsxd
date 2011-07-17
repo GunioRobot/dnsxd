@@ -166,7 +166,7 @@ case "$1" in
         exec $CMD
         ;;
 
-    admin|llq|rb)
+    admin|disklog|llq|rb)
         exec $DNSXDSHELLTOOL $@
         ;;
 
