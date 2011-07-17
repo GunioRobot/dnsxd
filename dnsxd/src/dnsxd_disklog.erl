@@ -56,13 +56,14 @@ fold(Fun, Acc) when is_function(Fun, 2) ->
 %%%===================================================================
 
 init([]) ->
-    Options = [{name, ?LOG_NAME}, {type, wrap}, {size, size()}, {file, file()}],
+    File = file(),
+    Options = [{name, ?LOG_NAME}, {type, wrap}, {size, size()}, {file, File}],
     case disk_log:open(Options) of
 	{ok, Log} -> {ok, #state{log = Log}};
 	{repaired, Log, {recovered, Rec}, {badbytes, Bad}} ->
 	    ?DNSXD_INFO("Repair triggered opening ~s. "
 			"~p terms recovered ~p bytes lost.",
-			[Rec, Bad]),
+			[File, Rec, Bad]),
 	    {ok, #state{log = Log}};
 	{error, _Reason} = Error -> Error
     end.
