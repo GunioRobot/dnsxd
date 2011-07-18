@@ -55,7 +55,7 @@ main(Node, ZoneName, [_|_] = Changes)
 	    ok = display_status(DisplayStatus, Zone),
 	    ok = display_keys(DisplayKeys, Zone);
 	Error1 ->
-	    dnsxd_shell_admin:fail("Failed to retrieve zone:~n~p~n", [Error1])
+	    dnsxd_shell_lib:fail("Failed to retrieve zone:~n~p~n", [Error1])
     end.
 
 display_changes(_ZoneName, []) -> ok;
