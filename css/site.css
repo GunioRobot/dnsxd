@@ -1,0 +1,37 @@
+body {
+    font-family: 'Cabin', arial, serif;
+    color: #333;
+    background: #fefefe;
+}
+a {
+    text-decoration: none;
+    color: #00A;
+}
+a:hover {
+    text-decoration: underline;
+}
+div.title {
+    font-weight: bold;
+
+}
+div.site {
+    text-align: justify;
+    width: 40em;
+    margin: 3em auto 2em auto;
+    line-height: 1.5em;
+}
+ul.posts {
+    list-style-type: none;
+    padding-left: 0.5em;
+    margin-bottom: 2em;
+}
+pre, code {
+    font-family: monospace;
+}
+div.footer {
+    color: #777;
+    border-top: 4px solid #EEE;
+}
+div.footer a {
+    color: #77a;
+}

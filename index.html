@@ -1,43 +1,20 @@
-<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
-<html>
-<head>
-<title>dnsxd - Erlang DNS Server</title>
-<style>
-body { font-family: Helvetica; font-size: 130%; color: #222; background: #fefefe; }
-a { color: #22e; }
-div#main { width: 33.3em; margin: auto; }
-</style>
-</head>
-<body>
-<div id="main">
+---
+layout: default
+title: dnsxd - DNS Service Discovery DNS Server
+---
+<div id="home">
   <h1>dnsxd</h1>
-  <p>dnsxd is an authoritative DNS server written in Erlang which supports:</p>
-  <ul>
-    <li>Apple Wide-Area Bonjour Extensions:
-    <ul>
-      <li>DNS Long Lived Queries</li>
-      <li>Update Leases</li>
-    </ul>
-  </li>
-  <li>DNS Update
-  <ul>
-    <li>Mandatory TSIGs</li>
-    <li>Optionally restricts clients to manipulating only DNSSD records
-  </ul>
-  </li>
-  <li>DNSSEC
-  <ul>
-    <li>NSEC3 white lies</li>
-    <li>RSA SHA1 signatures with SHA2 coming shortly</li>
-  </ul>
-  </li>
-  <li>Modular Backends:
-  <ul>
-    <li>CouchDB via CouchBeam</li>
-  </ul>
-  </li>
-</ul>
-<p>It has no release package or documentation at present. Source code is hosted on <a href="https://github.com/andrewtj/dnsxd">GitHub</a> and is available under the Apache 2 license. <a href="http://andrew.tj.id.au/email/">Inquiries</a>.</p>
+  <h2>A DNS Service Discovery focused DNS server</h1>
 </div>
-</body>
-</html>
+<div>
+  <p>dnsxd supports the protocols needed to do wide-area service discovery with Apple Bonjour:</p>
+  <ul>
+    <li>DNS Update - to allow clients to create DNS records for services</li>
+    <li>DNS Update Leases - to allow records to expire if a client loses network connectivity</li>
+    <li>DNS Long Lived Queries (LLQ) - to allow clients to receive real-time query updates</li>
+  </ul>
+  <p>All DNS Update messages must be authenticated with Transaction Signatures (TSIGs) and clients can optionally be restricted to only manipulating DNS records used to do DNS Service Discovery.
+  <p>Limited DNSSEC support is available in the form of RSA SHA1 signatures and NSEC3 white-lies for authenticated non-existence.</p>
+  <p>Zone and related data is stored in CouchDB and can be replicated to other servers via CouchDB's built-in replication functionality. Other storage backends can be selected via a configuration option.</p>
+  <p>dnsxd is written in Erlang and released under the <a href="https://raw.github.com/andrewtj/dnsxd/master/LICENSE">Apache License 2.0</a>. Source code is available via git from <a href="https://github.com/andrewtj/dnsxd">GitHub</a>. Archives will be available in the future. dnsxd is a young project and is yet to be proven in production.</p>
+</div>
