@@ -275,6 +275,7 @@ cancel_timer(undefined) -> ok.
 to_dnsxd_zone(#dnsxd_couch_zone{} = Zone) -> to_dnsxd_zone(Zone, false).
 
 to_dnsxd_zone(#dnsxd_couch_zone{name = Name,
+				enabled = Enabled,
 				rr = CouchRRs,
 				axfr_enabled = AXFREnabled,
 				axfr_hosts = AXFRHosts,
@@ -312,6 +313,7 @@ to_dnsxd_zone(#dnsxd_couch_zone{name = Name,
 		    undefined
 	    end,
     #dnsxd_zone{name = Name,
+		enabled = Enabled,
 		rr = RRs,
 		serials = Serials,
 		axfr_enabled = AXFREnabled,
