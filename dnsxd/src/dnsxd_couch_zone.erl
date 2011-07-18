@@ -149,7 +149,9 @@ change(ZoneName, Changes) ->
 	    SOAParam = #dnsxd_couch_sp{mname = Mname, rname = Rname,
 				       refresh = 3600, retry = 3600,
 				       expire = 3600, minimum = 120},
-	    Zone = #dnsxd_couch_zone{name = ZoneName, soa_param = SOAParam},
+	    NSEC3 = #dnsxd_couch_nsec3param{salt = <<>>, iter = 0, alg = 7},
+	    Zone = #dnsxd_couch_zone{name = ZoneName, soa_param = SOAParam,
+				     dnssec_nsec3_param = NSEC3},
 	    change(DbRef, Zone, Changes);
 	{error, _Reason} = Error -> Error
     end.
