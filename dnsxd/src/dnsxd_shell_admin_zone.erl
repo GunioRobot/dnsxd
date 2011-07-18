@@ -40,7 +40,7 @@ main(Node, ZoneName, [_|_] = Opts0) when is_atom(Node) ->
     {DisplayStatus, Opts2} = dnsxd_shell_lib:take_bool_opt(status, Opts1),
     if Opts2 =/= [] ->
 	    case dnsxd_shell_admin_lib:change_zone(Node, ZoneName, Opts2) of
-		ok -> display_changes(ZoneName, Opts2);
+		ok -> ok;
 		{display_error, {Fmt0, Args0}} ->
 		    dnsxd_shell_lib:fail(Fmt0, Args0);
 		{error, exists} ->
@@ -53,7 +53,7 @@ main(Node, ZoneName, [_|_] = Opts0) when is_atom(Node) ->
        true -> true
     end,
     if DisplayList -> display_list(Node);
-       DisplayStatus -> display_zone(Node, ZoneName);
+       DisplayStatus orelse Opts2 =/= [] -> display_zone(Node, ZoneName);
        true -> ok end.
 
 display_list(Node) ->
@@ -106,8 +106,6 @@ display_zone(#dnsxd_zone{name = Name,
 	     ["SOA Minimum", integer_to_list(Min) ]
 	   ],
     dnsxd_shell_lib:render_table(ColSizes, Rows).
-
-display_changes(ZoneName, Changes) -> io:format("~p~n", [{ZoneName, Changes}]).
 
 usage(ExitCode) ->
     getopt:usage(options(), "dnsxd-admin zone"),
