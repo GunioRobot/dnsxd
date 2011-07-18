@@ -28,12 +28,12 @@
 	 {datastore_opts, [{host, "localhost"},
 			   {port, 5984},
 			   {prefix, ""},
-			   {options, [{basic_auth, {"username", "password"}}]},
+			   % {options, [{basic_auth, {"username", "password"}}]},
 			   {database, "dnsxd_zones"},
 			   {init_timeout, 60000},
 			   {update_attempts, 10}
 			  ]},
-	 {log_mod, dnsxd_couch},
+	 {log_mod, dnsxd_disklog},
 	 {log_opts, []}
 	]}
  ]}.
