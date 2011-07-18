@@ -296,8 +296,9 @@ change(DbRef, #dnsxd_couch_zone{soa_param = SOAP} = Zone,
     NewZone = Zone#dnsxd_couch_zone{soa_param = NewSOAP,
 				    soa_param_set = dns:unix_time()},
     change(DbRef, NewZone, Changes);
-change(DbRef, #dnsxd_couch_zone{} = Zone, [{zone_enabled, true}|Changes]) ->
-    NewZone = Zone#dnsxd_couch_zone{enabled = true},
+change(DbRef, #dnsxd_couch_zone{} = Zone, [{zone_enabled, Bool}|Changes])
+  when is_boolean(Bool) ->
+    NewZone = Zone#dnsxd_couch_zone{enabled = Bool},
     change(DbRef, NewZone, Changes);
 change(DbRef, #dnsxd_couch_zone{} = Zone, [create_zone|Changes]) ->
     change(DbRef, Zone, Changes);
