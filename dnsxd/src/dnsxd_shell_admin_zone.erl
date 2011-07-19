@@ -168,6 +168,7 @@ process_opts([{Key, Value} = Req|Opts], Requests)
 	    dnsxd_shell_lib:fail(Msg, [Key])
     end;
 process_opts([status|Opts], Requests) -> process_opts(Opts, [status|Requests]);
+process_opts([list|Opts], Requests) -> process_opts(Opts, [list|Requests]);
 process_opts([Cmd|Opts], Requests)
   when Cmd =:= create orelse Cmd =:= delete orelse Cmd =:= enable orelse
        Cmd =:= disable ->
