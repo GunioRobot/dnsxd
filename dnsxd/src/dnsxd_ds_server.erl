@@ -184,7 +184,7 @@ setup_serial_change(#dnsxd_zone{name = ZoneName, serials = Serials}) ->
 setup_serial_change(ZoneName, Serials) ->
     case ets:lookup(?TAB_SW, ZoneName) of
 	[#sw{ref = OldRef}] when is_reference(OldRef) ->
-	    ok = cancel_timer(OldRef);
+	    ok = dnsxd_lib:cancel_timer(OldRef);
 	_ -> ok
     end,
     Now = dns:unix_time(),
@@ -204,7 +204,7 @@ setup_serial_change(ZoneName, Serials) ->
 cancel_serial_change(ZoneName) ->
     case ets:lookup(?TAB_SW, ZoneName) of
 	[#sw{ref = Ref}] when is_reference(Ref) ->
-	    ok = cancel_timer(Ref);
+	    ok = dnsxd_lib:cancel_timer(Ref);
 	_ -> ok
     end.
 
@@ -259,5 +259,3 @@ join_labels([]) -> <<>>;
 join_labels(Labels) ->
     <<$., Dname/binary>> = << <<$., L/binary>> || L <- Labels >>,
     Dname.
-
-cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok.

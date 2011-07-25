@@ -119,7 +119,7 @@ handle_info(write, #state{compact_ref = Ref,
 			  compact_finished = Finished,
 			  compact_pid = Pid} = State) ->
     Now = dns:unix_time(),
-    ok = cancel_timer(Ref),
+    ok = dnsxd_lib:cancel_timer(Ref),
     Running = is_pid(Pid) andalso is_process_alive(Pid),
     RunRecently = is_integer(Finished) andalso (Now - Finished) < 900,
     if not Running andalso RunRecently ->
@@ -268,9 +268,6 @@ couch_dk_to_dnsxd_key(#dnsxd_couch_dk{id = Id, incept = Incept, expire = Expire,
     Key = [ Fun(X) || X <- [E, N, D] ],
     #dnsxd_dnssec_key{id = Id, incept = Incept, expire = Expire, alg = Alg,
 		      ksk = KSK, key = Key}.
-
-cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;
-cancel_timer(undefined) -> ok.
 
 to_dnsxd_zone(#dnsxd_couch_zone{} = Zone) -> to_dnsxd_zone(Zone, false).
 

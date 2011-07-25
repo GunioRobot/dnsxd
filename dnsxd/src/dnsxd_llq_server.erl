@@ -218,7 +218,7 @@ set_lease_life(RequestedLeaseLife, #state{} = State) ->
 
 set_expire_timer(#state{expire = Expire, expire_ref = Ref} = State)
   when is_integer(Expire) ->
-    ok = cancel_timer(Ref),
+    ok = dnsxd_lib:cancel_timer(Ref),
     ExpireIn = Expire - dns:unix_time(),
     case ExpireIn > 0 of
 	true ->
@@ -230,15 +230,15 @@ set_expire_timer(#state{expire = Expire, expire_ref = Ref} = State)
     end.
 
 set_keepalive(#state{keepalive_ref = Ref, pending_events = []} = State) ->
-    ok = cancel_timer(Ref),
+    ok = dnsxd_lib:cancel_timer(Ref),
     NewRef = erlang:send_after(?DEFAULT_KEEPALIVE * 1000, self(), keepalive),
     State#state{keepalive_ref = NewRef};
 set_keepalive(#state{keepalive_ref = Ref} = State) ->
-    ok = cancel_timer(Ref),
+    ok = dnsxd_lib:cancel_timer(Ref),
     State#state{keepalive_ref = undefined}.
 
 resend_changes(#state{pending_events = Events, pending_ref = Ref} = State) ->
-    ok = cancel_timer(Ref),
+    ok = dnsxd_lib:cancel_timer(Ref),
     Now = dns:unix_time(),
     resend_changes(Now, State#state{pending_events = []}, Events).
 
@@ -276,7 +276,7 @@ send_changes(#state{id = LLQId, zonename = ZoneName, q = Q, msgctx = MsgCtx,
 		    do_dnssec = DoDNSSEC, answers = Ans, expire = Expire,
 		    pending_ref = PendingRef, pending_events = Events
 		   } = State) ->
-    ok = cancel_timer(PendingRef),
+    ok = dnsxd_lib:cancel_timer(PendingRef),
     {NewAns, Changes} = changes(ZoneName, Q, DoDNSSEC, Ans),
     LeaseLife = Expire - dns:unix_time(),
     NewEvents = send_changes(Events, MsgCtx, LLQId, Q, DoDNSSEC, Changes,
@@ -326,7 +326,7 @@ send_changes_mkid(Events) ->
     end.
 
 set_resend_timer(#state{pending_ref = Ref, pending_events = Events} = State) ->
-    ok = cancel_timer(Ref),
+    ok = dnsxd_lib:cancel_timer(Ref),
     NextResend = next_resend(Events),
     NewRef = erlang:send_after(NextResend * 1000, self(), resend),
     State#state{pending_ref = NewRef}.
@@ -351,10 +351,6 @@ changes(ZoneName, Query, DNSSEC, LastAns) ->
     Added = [ RR#dns_rr{ttl = 1} || RR <- CurAns -- LastAns ],
     Removed =[ RR#dns_rr{ttl = -1} || RR <- LastAns -- CurAns ],
     {CurAns, Added ++ Removed}.
-
-cancel_timer(Ref) when is_reference(Ref) ->
-    _ = erlang:cancel_timer(Ref), ok;
-cancel_timer(_) -> ok.
 
 ack_event(EventId, #state{pending_events = Events} = State) ->
     case lists:keytake(EventId, #event.id, Events) of
