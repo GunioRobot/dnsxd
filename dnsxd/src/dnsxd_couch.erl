@@ -194,12 +194,7 @@ handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
 	      end,
     ?DNSXD_INFO(Message, [Name]),
     {noreply, State};
-handle_info({Ref, Msg}, #state{db_ref = Ref} = State) ->
-    ?DNSXD_ERR("Stray message concerning db_ref: ~n~p~n", [Msg]),
-    {noreply, State};
-handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
-    {noreply, State}.
+handle_info(_Msg, State) -> {stop, stray_message, State}.
 
 terminate(_Reason, _State) -> ok.
 
