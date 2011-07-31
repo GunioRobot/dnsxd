@@ -161,11 +161,16 @@ handle_info({Ref, done} = Message,
 	    {ok, _} = timer:send_after(30000, self(), Message),
 	    {noreply, State}
     end;
-handle_info({error, Ref, _Seq, Error}, #state{db_ref = Ref} = State) ->
+handle_info({error, Ref, _Seq, Error},
+	    #state{db_ref = Ref, db_lost = false} = State) ->
     ?DNSXD_ERR("Lost db connection:~n~p", [Error]),
     {ok, _} = timer:send_after(0, self(), {Ref, done}),
     NewState = State#state{db_lost = true},
     {noreply, NewState};
+handle_info({error, _Ref, _Seq, Error}, #state{db_lost = true} = State) ->
+    Fmt = "Got db connection error when db connection already lost:~n~p",
+    ?DNSXD_ERR(Fmt, [Error]),
+    {noreply, State};
 handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
     Name = proplists:get_value(<<"id">>, Props),
     Exists = dnsxd:zone_loaded(Name),
