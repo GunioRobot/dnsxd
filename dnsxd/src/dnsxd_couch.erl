@@ -161,7 +161,7 @@ handle_info({Ref, done} = Message,
 	    {ok, _} = timer:send_after(30000, self(), Message),
 	    {noreply, State}
     end;
-handle_info({Ref, {error, Error}}, #state{db_ref = Ref} = State) ->
+handle_info({error, Ref, _Seq, Error}, #state{db_ref = Ref} = State) ->
     ?DNSXD_ERR("Lost db connection:~n~p", [Error]),
     {ok, _} = timer:send_after(0, self(), {Ref, done}),
     NewState = State#state{db_lost = true},
