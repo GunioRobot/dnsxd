@@ -114,10 +114,11 @@ fold(Fun, Acc, Cont) ->
     end.
 
 file() ->
-    Default = filename:join(["log","disklog", "log"]),
-    Dir = get_opt(log_dir, Default),
-    ok = filelib:ensure_dir(Dir),
-    Dir.
+    DefaultDir = filename:join("log","disklog"),
+    Dir = get_opt(log_dir, DefaultDir),
+    File = filename:join(Dir, "log"),
+    ok = filelib:ensure_dir(File),
+    File.
 
 size() ->
     MaxBytes = get_opt(max_bytes, 10485760),
