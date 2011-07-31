@@ -119,7 +119,7 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
 				   anc = 0, answers = [],
 				   auc = 0, authority = [],
 				   adc = 0, additional = []},
-    LogProps = [{op, OC}, {rc, notauth}],
+    LogProps = [{op, OC}, {rc, notauth}, {keyname, KeyName}],
     case dnsxd:get_key(KeyName) of
 	{ZoneName, #dnsxd_tsig_key{secret = Secret}} ->
 	    LogPropsZone = [{zone, ZoneName}|LogProps],
