@@ -115,10 +115,10 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
     #dns_rrdata_tsig{alg = AlgM, msgid = MsgId} = Data,
     Alg = dns:dname_to_lower(AlgM),
     KeyName = dns:dname_to_lower(KeyNameM),
-    ReplyTmpl = ReqMsg#dns_message{qr = true,
-				   anc = 0, answers = [],
-				   auc = 0, authority = [],
-				   adc = 0, additional = []},
+    Reply = ReqMsg#dns_message{qr = true, rc = notauth,
+			       anc = 0, answers = [],
+			       auc = 0, authority = [],
+			       adc = 0, additional = []},
     LogProps = [{op, OC}, {rc, notauth}, {keyname, KeyName}],
     case dnsxd:get_key(KeyName) of
 	{ZoneName, #dnsxd_tsig_key{secret = Secret}} ->
@@ -134,18 +134,15 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
 		    NewMsgCtx = dnsxd_op_ctx:tsig(MsgCtx, TSIGCtx),
 		    dispatch(NewMsgCtx, ReqMsg);
 		{ok, badtime} ->
-		    Reply = ReplyTmpl#dns_message{rc = notauth},
 		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badtime,
 					   [{other, <<(dns:unix_time()):32>>}]),
 		    dnsxd:log(MsgCtx, [{tsig_err, badtime}|LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg);
 		{ok, TSIGRC} ->
-		    Reply = ReplyTmpl#dns_message{rc = notauth},
 		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, TSIGRC),
 		    dnsxd:log(MsgCtx, [{tsig_err, TSIGRC}|LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg);
 		{error, bad_alg} ->
-		    Reply = ReplyTmpl#dns_message{rc = notauth},
 		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badsig),
 		    dnsxd:log(MsgCtx, [{tsig_err, badalg}|LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg)
@@ -157,7 +154,6 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
 		    dnsxd:log(MsgCtx, [{zone, ZoneName},
 				       {tsig_err, badkey}|LogProps])
 	    end,
-	    Reply = ReplyTmpl#dns_message{rc = notauth},
 	    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badkey),
 	    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg)
     end.
