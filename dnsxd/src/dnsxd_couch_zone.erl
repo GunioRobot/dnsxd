@@ -23,8 +23,6 @@
 %% API
 -export([get/1, get/2, put/1, put/2, update/5, change/2]).
 
--define(ERL_REC_TAG, <<"dnsxd_couch_rec">>).
-
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -433,7 +431,7 @@ decode_doc(DocProps) ->
     case proplists:get_bool(<<"_deleted">>, DocProps) of
 	true -> {error, deleted};
 	false ->
-	    case get_value(?ERL_REC_TAG, DocProps) of
+	    case get_value(?DNSXD_COUCH_TAG, DocProps) of
 		<<"dnsxd_couch_zone">> ->
 		    #dnsxd_couch_zone{} = decode(DocProps);
 		_ -> {error, not_zone}
@@ -442,7 +440,7 @@ decode_doc(DocProps) ->
 
 decode({List}) when is_list(List) -> decode(List);
 decode(List) when is_list(List) ->
-    case get_value(?ERL_REC_TAG, List) of
+    case get_value(?DNSXD_COUCH_TAG, List) of
 	undefined -> List;
 	TagBin ->
 	    Tag = binary_to_existing_atom(TagBin, latin1),
@@ -456,12 +454,12 @@ decode(Tag, Field, List) ->
     Default = get_default(Tag, Field),
     case get_value(atom_to_binary(Field, latin1), List, Default) of
 	{MebePL} when is_list(MebePL) ->
-	    case get_value(?ERL_REC_TAG, MebePL) of
+	    case get_value(?DNSXD_COUCH_TAG, MebePL) of
 		undefined -> MebePL;
 		_ -> decode(MebePL)
 	    end;
 	[{MebePL}|_] = MebePLs when is_list(MebePL) ->
-	    case get_value(?ERL_REC_TAG, MebePL) of
+	    case get_value(?DNSXD_COUCH_TAG, MebePL) of
 		undefined -> List;
 		_ -> [ decode(PL) || PL <- MebePLs ]
 	    end;
@@ -505,7 +503,7 @@ encode(Rec) when is_tuple(Rec) ->
     Fun = fun(X, Y) -> encode_zipper(Tag, X, Y) end,
     PL = [ KV || KV <- lists:zipwith(Fun, fields(Tag), values(Rec)),
 		 KV =/= undefined ],
-    {[{?ERL_REC_TAG, atom_to_binary(Tag, latin1)}|PL]};
+    {[{?DNSXD_COUCH_TAG, atom_to_binary(Tag, latin1)}|PL]};
 encode(undefined) -> null;
 encode(null) -> null.
 
