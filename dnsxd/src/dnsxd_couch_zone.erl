@@ -38,7 +38,7 @@ get(DbRef, ZoneName) ->
 	{ok, Doc} ->
 	    case decode_doc(Doc) of
 		#dnsxd_couch_zone{} = Zone ->
-		    case get_conflicts(Doc) of
+		    case dnsxd_couch_lib:get_conflicts(Doc) of
 			[] -> {ok, Zone};
 			Revs -> get(DbRef, ZoneName, Zone, Revs)
 		    end;
@@ -422,9 +422,6 @@ is_current(Now, #dnsxd_couch_dk{tombstone = Tombstone})
   when is_integer(Tombstone) -> is_current(Now, Tombstone);
 is_current(_Now, Rec) when is_tuple(Rec) -> true;
 is_current(Now, Tombstone) when is_integer(Tombstone) -> Now < Tombstone.
-
-get_conflicts({DocProps}) -> get_conflicts(DocProps);
-get_conflicts(DocProps) -> get_value(<<"_conflicts">>, DocProps, []).
 
 decode_doc({DocProps}) -> decode_doc(DocProps);
 decode_doc(DocProps) ->

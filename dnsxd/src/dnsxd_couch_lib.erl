@@ -21,7 +21,7 @@
 -include("dnsxd_couch.hrl").
 
 %% API
--export([get_db/0, db_exists/0, get_serials/1]).
+-export([get_db/0, db_exists/0, get_serials/1, get_conflicts/1]).
 
 -define(SERVER, dnsxd_couch).
 -define(DB_PREFIX, "dnsxd_couch").
@@ -65,3 +65,6 @@ get_server() ->
 get_db_name() ->
     CfgOpts = dnsxd:datastore_opts(),
     proplists:get_value(database, CfgOpts, "dnsxd_zones").
+
+get_conflicts({DocProps}) -> get_conflicts(DocProps);
+get_conflicts(DocProps) -> proplists:get_value(<<"_conflicts">>, DocProps, []).
