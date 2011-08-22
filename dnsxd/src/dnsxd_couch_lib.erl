@@ -21,7 +21,8 @@
 -include("dnsxd_couch.hrl").
 
 %% API
--export([get_db/0, db_exists/0, get_serials/1, get_conflicts/1]).
+-export([get_db/0, db_exists/0, get_serials/1, get_conflicts/1,
+	 setup_monitor/1, setup_monitor/2]).
 
 -define(SERVER, dnsxd_couch).
 -define(DB_PREFIX, "dnsxd_couch").
@@ -54,6 +55,26 @@ get_serials(#dnsxd_couch_rr{expire = Expire}, Acc)
 
 get_conflicts({DocProps}) -> get_conflicts(DocProps);
 get_conflicts(DocProps) -> proplists:get_value(<<"_conflicts">>, DocProps, []).
+
+setup_monitor(Filter) ->
+    {ok, DbRef} = dnsxd_couch_lib:get_db(),
+    case couchbeam:db_info(DbRef) of
+	{ok, {DbInfo}} ->
+	    Since = proplists:get_value(<<"update_seq">>, DbInfo),
+	    setup_monitor(DbRef, Filter, Since);
+	{error, _Reason} = Error -> Error
+    end.
+
+setup_monitor(Filter, Since) ->
+    {ok, DbRef} = dnsxd_couch_lib:get_db(),
+    setup_monitor(DbRef, Filter, Since).
+
+setup_monitor(DbRef, Filter, Since) ->
+    Opts = [{since, Since}, continuous, heartbeat, {filter, Filter}],
+    case couchbeam_changes:stream(DbRef, self(), Opts) of
+	{ok, Ref, _ChangesPid} -> {ok, Ref, Since};
+	{error, _Reason} = Error -> Error
+    end.
 
 %%% Internal functions
 

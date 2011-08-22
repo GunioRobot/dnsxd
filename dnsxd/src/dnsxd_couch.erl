@@ -35,6 +35,8 @@
 
 -define(APP_DEPS, [sasl, ibrowse, couchbeam]).
 
+-define(CHANGES_FILTER, <<?DNSXD_COUCH_DESIGNDOC "/dnsxd_couch_zone">>).
+
 -record(state, {db_ref, db_seq, db_lost = false,
 		compact_ref, compact_finished, compact_pid}).
 
@@ -97,7 +99,7 @@ init([]) ->
 	true -> ok;
 	false -> ok = dnsxd_couch_app:install()
     end,
-    {ok, DbRef, DbSeq} = setup_monitor(),
+    {ok, DbRef, DbSeq} = dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER),
     State = #state{db_ref = DbRef, db_seq = DbSeq},
     ok = init_load_zones(),
     {ok, State}.
@@ -149,7 +151,7 @@ handle_info({Ref, {last_seq, NewSeq}}, #state{db_ref = Ref} = State) ->
     {noreply, NewState};
 handle_info({Ref, done} = Message,
 	    #state{db_ref = Ref, db_seq = Seq, db_lost = Lost} = State) ->
-    case setup_monitor(Seq) of
+    case dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER, Seq) of
 	{ok, NewRef, Seq} ->
 	    if Lost -> ?DNSXD_INFO("Reconnected db poll");
 	       true -> ok end,
@@ -336,32 +338,6 @@ to_dnsxd_rr(#dnsxd_couch_rr{incept = Incept,
 	      type = Type,
 	      ttl = TTL,
 	      data = Data}.
-
-setup_monitor() ->
-    case dnsxd_couch_lib:get_db() of
-	{ok, DbRef} ->
-	    case couchbeam:db_info(DbRef) of
-		{ok, {DbInfo}} ->
-		    Since = get_value(<<"update_seq">>, DbInfo),
-		    setup_monitor(DbRef, Since);
-		{error, _Reason} = Error -> Error
-	    end;
-	{error, _Reason} = Error -> Error
-    end.
-
-setup_monitor(Since) ->
-    case dnsxd_couch_lib:get_db() of
-	{ok, DbRef} -> setup_monitor(DbRef, Since);
-	{error, _Reason} = Error -> Error
-    end.
-
-setup_monitor(DbRef, Since) when is_tuple(DbRef) ->
-    Opts = [{since, Since}, continuous, heartbeat,
-	    {filter, ?DNSXD_COUCH_DESIGNDOC "/dnsxd_couch_zone"}],
-    case couchbeam_changes:stream(DbRef, self(), Opts) of
-	{ok, Ref, _ChangesPid} -> {ok, Ref, Since};
-	{error, _Reason} = Error -> Error
-    end.
 
 start_compact() -> spawn(fun compact/0).
 
