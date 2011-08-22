@@ -172,6 +172,8 @@ handle_info({error, _Ref, _Seq, Error}, #state{db_lost = true} = State) ->
     {noreply, State};
 handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
     Name = proplists:get_value(<<"id">>, Props),
+    NewSeq = proplists:get_value(<<"seq">>, Props),
+    NewState = State#state{db_seq = NewSeq},
     Exists = dnsxd:zone_loaded(Name),
     Message = case load_zone(Name) of
 		  {error, not_zone} ->
@@ -192,7 +194,7 @@ handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
 		      "Zone ~s loaded."
 	      end,
     ?DNSXD_INFO(Message, [Name]),
-    {noreply, State};
+    {noreply, NewState};
 handle_info(_Msg, State) -> {stop, stray_message, State}.
 
 terminate(_Reason, _State) -> ok.
