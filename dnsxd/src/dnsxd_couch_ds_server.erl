@@ -89,10 +89,6 @@ dnsxd_admin_change_zone(ZoneName, [_|_] = Changes) when is_binary(ZoneName) ->
 %%%===================================================================
 
 init([]) ->
-    case dnsxd_couch_lib:db_exists() of
-	true -> ok;
-	false -> ok = dnsxd_couch_app:install()
-    end,
     {ok, DbRef, DbSeq} = dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER),
     State = #state{db_ref = DbRef, db_seq = DbSeq},
     ok = init_load_zones(),

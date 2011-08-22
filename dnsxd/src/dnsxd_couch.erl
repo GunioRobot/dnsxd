@@ -57,6 +57,7 @@ dnsxd_log(Props) -> dnsxd_couch_log_server:dnsxd_log(Props).
 %%%===================================================================
 
 init([]) ->
+    ok = dnsxd_couch_app:install(),
     Servers = [dnsxd_couch_ds_server, dnsxd_couch_log_server],
     Children = [{Mod, {Mod, start_link, []},
 		 permanent, 5000, worker, [Mod]} || Mod <- Servers ],
