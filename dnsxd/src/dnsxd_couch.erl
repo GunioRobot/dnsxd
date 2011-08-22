@@ -146,9 +146,6 @@ handle_info(run_compact, #state{compact_pid = OldPid} = State) ->
 	    NewState = State#state{compact_pid = Pid},
 	    {noreply, NewState}
     end;
-handle_info({Ref, {last_seq, NewSeq}}, #state{db_ref = Ref} = State) ->
-    NewState = State#state{db_seq = NewSeq},
-    {noreply, NewState};
 handle_info({Ref, done} = Message,
 	    #state{db_ref = Ref, db_seq = Seq, db_lost = Lost} = State) ->
     case dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER, Seq) of
