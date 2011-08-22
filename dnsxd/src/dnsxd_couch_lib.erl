@@ -52,6 +52,9 @@ get_serials(#dnsxd_couch_rr{incept = Incept}, Acc)
 get_serials(#dnsxd_couch_rr{expire = Expire}, Acc)
   when is_integer(Expire) -> sets:add_element(Expire, Acc).
 
+get_conflicts({DocProps}) -> get_conflicts(DocProps);
+get_conflicts(DocProps) -> proplists:get_value(<<"_conflicts">>, DocProps, []).
+
 %%% Internal functions
 
 get_server() ->
@@ -65,6 +68,3 @@ get_server() ->
 get_db_name() ->
     CfgOpts = dnsxd:datastore_opts(),
     proplists:get_value(database, CfgOpts, "dnsxd_zones").
-
-get_conflicts({DocProps}) -> get_conflicts(DocProps);
-get_conflicts(DocProps) -> proplists:get_value(<<"_conflicts">>, DocProps, []).
