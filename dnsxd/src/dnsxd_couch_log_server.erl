@@ -36,7 +36,8 @@
 
 -define(ETS_INSERT_RETRY, 3).
 
--define(DOC_NAME_PREFIX, <<"dnsxd_couch_log_">>).
+-define(DOC_NAME_PREFIX_STR, "dnsxd_couch_log_").
+-define(DOC_NAME_PREFIX, <<?DOC_NAME_PREFIX_STR>>).
 -define(DOC_NAME_CONFIG, <<"dnsxd_couch_log_config">>).
 
 -define(DOC_TYPE_LOG, <<"dnsxd_couch_log_entries">>).
@@ -47,7 +48,9 @@
 
 -define(FLUSH_INTERVAL, 33333).
 
--record(state, {flush_ref}).
+-define(CHANGES_FILTER, <<?DNSXD_COUCH_DESIGNDOC "/dnsxd_couch_log">>).
+
+-record(state, {flush_ref, db_ref, db_seq, db_lost = false}).
 -record(conf_entry, {key, value}).
 -record(log_entry, {id = dnsxd_lib:new_id(), doc_no = 0, props = []}).
 
@@ -67,7 +70,8 @@ init([]) ->
     ok = create_live_ets_table(),
     ?TAB_CONF = ets:new(?TAB_CONF, [named_table, {keypos, #conf_entry.key}]),
     ok = update_conf(),
-    State = setup_flush_callback(#state{}),
+    {ok, Ref, Since} = dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER),
+    State = setup_flush_callback(#state{db_ref = Ref, db_seq = Since}),
     {ok, State}.
 
 handle_call(Request, _From, State) ->
@@ -82,9 +86,55 @@ handle_info(flush_table, #state{} = State) ->
     NewState = setup_flush_callback(State),
     ok = flush_to_couch(),
     {noreply, NewState};
-handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
-    {noreply, State}.
+handle_info({Ref, done} = Message,
+	    #state{db_ref = Ref, db_seq = Seq, db_lost = Lost} = State) ->
+    case dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER, Seq) of
+	{ok, NewRef, Seq} ->
+	    if Lost -> ?DNSXD_INFO("Reconnected db poll");
+	       true -> ok end,
+	    {noreply, State#state{db_ref = NewRef, db_lost = false}};
+	{error, Error} ->
+	    ?DNSXD_ERR("Unable to reconnect db poll:~n"
+		       "~p~n"
+		       "Retrying in 30 seconds", [Error]),
+	    {ok, _} = timer:send_after(30000, self(), Message),
+	    {noreply, State}
+    end;
+handle_info({error, Ref, _Seq, Error},
+	    #state{db_ref = Ref, db_lost = false} = State) ->
+    ?DNSXD_ERR("Lost db connection:~n~p", [Error]),
+    {ok, _} = timer:send_after(0, self(), {Ref, done}),
+    NewState = State#state{db_lost = true},
+    {noreply, NewState};
+handle_info({error, _Ref, _Seq, Error}, #state{db_lost = true} = State) ->
+    Fmt = "Got db connection error when db connection already lost:~n~p",
+    ?DNSXD_ERR(Fmt, [Error]),
+    {noreply, State};
+handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
+    NewSeq = proplists:get_value(<<"seq">>, Props),
+    NewState = State#state{db_seq = NewSeq},
+    case proplists:get_value(<<"id">>, Props) of
+	?DOC_NAME_CONFIG ->
+	    ok = update_conf(),
+	    ?DNSXD_INFO("Log configuration reloaded");
+	<<?DOC_NAME_PREFIX_STR, _/binary>> = LogDocName ->
+	    case get_log(LogDocName) of
+		{ok, _} -> ?DNSXD_INFO("Resolved conflict in ~s");
+		{error, Reason} ->
+		    Fmt = "Failed to resolve conflict in ~s:~n~p",
+		    Args = [LogDocName, Reason],
+		    ?DNSXD_ERR(Fmt, Args)
+	    end;
+	Other ->
+	    Fmt = "Not sure how to handle change in ~s detected by filter ~s",
+	    Args = [Other, ?CHANGES_FILTER],
+	    ?DNSXD_ERR(Fmt, Args)
+    end,
+    {noreply, NewState};
+handle_info(_Msg, #state{flush_ref = Ref} = State) ->
+    ok = dnsxd_lib:cancel_timer(Ref),
+    _ = flush_to_couch(),
+    {stop, stray_message, State}.
 
 terminate(_Reason, #state{flush_ref = Ref}) ->
     ok = dnsxd_lib:cancel_timer(Ref),
@@ -256,6 +306,10 @@ flush_to_couch(DbRef, DocNo, Entries, Retries) ->
 	    timer:sleep(10),
 	    flush_to_couch(DbRef, DocNo, Entries, Retries - 1)
     end.
+
+get_log(DocName) ->
+    {ok, DbRef} = dnsxd_couch_lib:get_db(),
+    get_log(DbRef, DocName).
 
 get_log(DbRef, DocName) ->
     BaseProps = [{<<"_id">>, DocName}, {?DNSXD_COUCH_TAG, ?DOC_TYPE_LOG}],
