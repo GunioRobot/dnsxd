@@ -25,7 +25,7 @@
 -export([start_link/0]).
 
 -export([dnsxd_admin_zone_list/0, dnsxd_admin_get_zone/1,
-	 dnsxd_admin_change_zone/2, dnsxd_dns_update/6, dnsxd_log/1]).
+	 dnsxd_admin_change_zone/2, dnsxd_dns_update/6]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -59,12 +59,6 @@ dnsxd_dns_update(MsgCtx, Key, ZoneName, ?DNS_CLASS_IN, PreReqs, Updates) ->
     Attempts = proplists:get_value(update_attempts, DsOpts, 10),
     update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates);
 dnsxd_dns_update(_, _, _, _, _, _) -> refused.
-
-dnsxd_log(Props) ->
-    Doc = {[{dnsxd_couch_rec, <<"dnsxd_couch_log">>}|Props]},
-    {ok, DbRef} = dnsxd_couch_lib:get_db(),
-    {ok, _} = couchbeam:save_doc(DbRef, Doc),
-    ?DNSXD_COUCH_SERVER ! write.
 
 dnsxd_admin_zone_list() ->
     {ok, DbRef} = dnsxd_couch_lib:get_db(),
