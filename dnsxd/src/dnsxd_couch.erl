@@ -61,4 +61,4 @@ init([]) ->
     Servers = [dnsxd_couch_ds_server, dnsxd_couch_log_server],
     Children = [{Mod, {Mod, start_link, []},
 		 permanent, 5000, worker, [Mod]} || Mod <- Servers ],
-    {ok, {{one_for_one, 1, 1}, Children}}.
+    {ok, {{one_for_one, 0, 1}, Children}}.
