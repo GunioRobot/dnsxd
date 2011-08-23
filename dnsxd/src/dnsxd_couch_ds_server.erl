@@ -33,8 +33,6 @@
 
 -define(SERVER, ?DNSXD_COUCH_SERVER).
 
--define(APP_DEPS, [sasl, ibrowse, couchbeam]).
-
 -define(CHANGES_FILTER, <<?DNSXD_COUCH_DESIGNDOC "/dnsxd_couch_zone">>).
 
 -record(state, {db_ref, db_seq, db_lost = false,
@@ -47,12 +45,8 @@
 start_link() ->
     DsOpts = dnsxd:datastore_opts(),
     Timeout = proplists:get_value(init_timeout, DsOpts, 60000),
-    case dnsxd_lib:ensure_apps_started(?APP_DEPS) of
-	ok ->
-	    Opts = [{timeout, Timeout}],
-	    gen_server:start_link({local, ?SERVER}, ?MODULE, [], Opts);
-	{error, _Reason} = Error -> Error
-    end.
+    Opts = [{timeout, Timeout}],
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], Opts).
 
 dnsxd_dns_update(MsgCtx, Key, ZoneName, ?DNS_CLASS_IN, PreReqs, Updates) ->
     DsOpts = dnsxd:datastore_opts(),

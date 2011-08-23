@@ -32,12 +32,17 @@
 
 -define(SERVER, ?MODULE).
 
+-define(APP_DEPS, [sasl, ibrowse, couchbeam]).
+
 %%%===================================================================
 %%% API functions
 %%%===================================================================
 
 start_link() ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+    case dnsxd_lib:ensure_apps_started(?APP_DEPS) of
+	ok -> supervisor:start_link({local, ?SERVER}, ?MODULE, []);
+	{error, _Reason} = Error -> Error
+    end.
 
 dnsxd_admin_zone_list() -> dnsxd_couch_ds_server:dnsxd_admin_zone_list().
 
