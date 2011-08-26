@@ -26,7 +26,8 @@
 			   dnssec_nsec3_param,
 			   dnssec_nsec3_param_set = dns:unix_time(),
 			   dnssec_siglife = 1250000,
-			   dnssec_siglife_set = dns:unix_time()
+			   dnssec_siglife_set = dns:unix_time(),
+			   meta = null
 			  }).
 
 %% soa param
