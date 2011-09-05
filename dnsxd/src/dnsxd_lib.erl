@@ -103,33 +103,26 @@ is_dnssd_rr(ZoneName, #dnsxd_rr{name = Name, type = Type}) ->
 is_dnssd_rr(ZoneName, Name, Type) when is_atom(Type) ->
     NewType = dns:type_to_int(Type),
     is_dnssd_rr(ZoneName, Name, NewType);
-is_dnssd_rr(ZoneNameLabels, Name, ?DNS_TYPE_PTR) when is_list(ZoneNameLabels) ->
-    case dns:dname_to_labels(dns:dname_to_lower(Name)) of
-	[_, <<"_sub">>, <<$_, _/binary>>, ProtoLabel | ZoneNameLabels ]
-	  when ProtoLabel =:= <<"_tcp">> orelse ProtoLabel =:= <<"_udp">> ->
-	    true;
-	[<<$_, _/binary>>, ProtoLabel | ZoneNameLabels ]
-	  when ProtoLabel =:= <<"_tcp">> orelse ProtoLabel =:= <<"_udp">> ->
-	    true;
-	_ -> false
-    end;
-is_dnssd_rr(ZoneNameLabels, _KeyName, #dns_rr{type = Type, name = Name})
-  when is_list(ZoneNameLabels) andalso
-       Type =:= ?DNS_TYPE_SRV orelse
-       Type =:= ?DNS_TYPE_TXT ->
-    case dns:dname_to_labels(dns:dname_to_lower(Name)) of
-	[_, <<$_, _/binary>>, ProtoLabel | ZoneNameLabels ]
-	  when ProtoLabel =:= <<"_tcp">> orelse ProtoLabel =:= <<"_udp">> ->
-	    true;
-	_ -> false
-    end;
-is_dnssd_rr(ZoneName, Name, Type)
-  when is_binary(ZoneName) andalso
-       Type =:= ?DNS_TYPE_SRV orelse
-       Type =:= ?DNS_TYPE_TXT ->
+is_dnssd_rr(ZoneName, Name, Type) when is_binary(ZoneName) ->
     ZoneNameLabels = dns:dname_to_labels(ZoneName),
     is_dnssd_rr(ZoneNameLabels, Name, Type);
-is_dnssd_rr(_ZoneName, _Name, _Type) -> false.
+is_dnssd_rr(ZoneNameLabels, Name, ?DNS_TYPE_PTR) ->
+    case dns:dname_to_labels(dns:dname_to_lower(Name)) of
+	[<<$_, _/binary>>, <<"_sub">>, <<$_, _/binary>>, Proto|ZoneNameLabels]
+	  when Proto =:= <<"_tcp">> orelse Proto =:= <<"_udp">> -> true;
+	[<<$_, _/binary>>, Proto|ZoneNameLabels]
+	  when Proto =:= <<"_tcp">> orelse Proto =:= <<"_udp">> -> true;
+	[<<"_services">>, <<"_dns-sd">>, <<"_udp">>|ZoneNameLabels] -> true;
+	_ -> false
+    end;
+is_dnssd_rr(ZoneNameLabels, Name, Type)
+  when Type =:= ?DNS_TYPE_SRV orelse Type =:= ?DNS_TYPE_TXT ->
+    case dns:dname_to_labels(dns:dname_to_lower(Name)) of
+	[_, <<$_, _/binary>>, Proto|ZoneNameLabels] ->
+	    Proto =:= <<"_tcp">> orelse Proto =:= <<"_udp">>;
+	_ -> false
+    end;
+is_dnssd_rr(_ZoneNameLabels, _Name, _Type) -> false.
 
 use_procket() ->
     case dnsxd:get_env(procket) of
