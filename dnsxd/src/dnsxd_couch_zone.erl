@@ -450,7 +450,7 @@ decode(Tag, Field, List) ->
     case get_value(atom_to_binary(Field, latin1), List, Default) of
 	{MebePL} when is_list(MebePL) ->
 	    case get_value(?DNSXD_COUCH_TAG, MebePL) of
-		undefined -> MebePL;
+		undefined -> {MebePL};
 		_ -> decode(MebePL)
 	    end;
 	[{MebePL}|_] = MebePLs when is_list(MebePL) ->
