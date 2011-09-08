@@ -3,6 +3,10 @@
 
 -include_lib("dns/include/dns.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -define(DNSXD_EL(MOD, FMT, ARGS), error_logger:MOD(?MODULE_STRING " ~p:~n" ++
 						   FMT ++ "~n", [self()|ARGS])).
 -define(DNSXD_INFO(FMT, ARGS), ?DNSXD_EL(info_msg, FMT, ARGS)).

@@ -24,7 +24,7 @@
 	 format_optparse_error/1]).
 
 -define(TAB_COL_MAX, 76).
--define(EXIT_DELAY, receive after 500 -> ok end).
+-define(EXIT_DELAY, timer:sleep(500)).
 
 %% distributed Erlang
 

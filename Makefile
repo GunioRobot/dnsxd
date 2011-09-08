@@ -18,5 +18,5 @@ clean:
 	@./rebar clean
 	@rm -rf rel/dnsxd
 
-test: all
+test:
 	@./rebar eunit skip_deps=true

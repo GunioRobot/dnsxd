@@ -26,7 +26,7 @@
 			   dnssec_nsec3_param_set = dns:unix_time(),
 			   dnssec_siglife = 1250000,
 			   dnssec_siglife_set = dns:unix_time(),
-			   meta = null
+			   meta
 			  }).
 
 %% soa param
@@ -46,19 +46,19 @@
 			 set = dns:unix_time(),
 			 enabled = true,
 			 dnssd_only = false,
-			 tombstone = null}).
+			 tombstone}).
 
 %% rr
 -record(dnsxd_couch_rr, {id = dnsxd_lib:new_id(),
 			 incept,
-			 expire = null,
+			 expire,
 			 set = dns:unix_time(),
 			 name,
 			 class,
 			 type,
 			 ttl,
 			 data,
-			 tombstone = null}).
+			 tombstone}).
 
 %% dnssec
 -record(dnsxd_couch_dk, {id = dnsxd_lib:new_id(),
@@ -68,7 +68,7 @@
 			 alg,
 			 ksk = false,
 			 data,
-			 tombstone = null}).
+			 tombstone}).
 -record(dnsxd_couch_dk_rsa, {e, n, d}).
 -record(dnsxd_couch_nsec3param, {salt, iter, alg}).
 

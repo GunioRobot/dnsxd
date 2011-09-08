@@ -138,7 +138,7 @@ change(ZoneName, Changes) ->
 		{ok, _} -> ok;
 		{error, _Reason} = Error -> Error
 	    end;
-	{ok, #dnsxd_couch_zone{} = Zone} -> change(DbRef, Zone, Changes);
+	{ok, #dnsxd_couch_zone{} = Zone} -> make_changes(Zone, Changes);
 	{error, not_found} when Create ->
 	    Mname = <<"ns.", ZoneName/binary>>,
 	    Rname = <<"hostmaster.", ZoneName/binary>>,
@@ -148,18 +148,21 @@ change(ZoneName, Changes) ->
 	    NSEC3 = #dnsxd_couch_nsec3param{salt = <<>>, iter = 0, alg = 7},
 	    Zone = #dnsxd_couch_zone{name = ZoneName, soa_param = SOAParam,
 				     dnssec_nsec3_param = NSEC3},
-	    change(DbRef, Zone, Changes);
+	    case make_changes(Zone, Changes) of
+		#dnsxd_couch_zone{} = NewZone -> ?MODULE:put(DbRef, NewZone);
+		{error, _} = Result -> Result
+	    end;
 	{error, _Reason} = Error -> Error
     end.
 
-change(DbRef, #dnsxd_couch_zone{} = Zone, []) -> ?MODULE:put(DbRef, Zone);
-change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys} = Zone,
-       [{add_tsig_key, #dnsxd_tsig_key{id = Id,
-				       name = Name,
-				       secret = Secret,
-				       enabled = Enabled,
-				       dnssd_only = DNSSDOnly
-				      }}|Changes]) ->
+make_changes(#dnsxd_couch_zone{} = Zone, []) -> Zone;
+make_changes(#dnsxd_couch_zone{tsig_keys = Keys} = Zone,
+	     [{add_tsig_key, #dnsxd_tsig_key{id = Id,
+					     name = Name,
+					     secret = Secret,
+					     enabled = Enabled,
+					     dnssd_only = DNSSDOnly
+					    }}|Changes]) ->
     Active = [Key || Key <- Keys, is_active(Key)],
     IdInUse = lists:keymember(Id, #dnsxd_couch_tk.name, Keys),
     NameInUse = lists:keymember(Name, #dnsxd_couch_tk.name, Active),
@@ -173,11 +176,11 @@ change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys} = Zone,
 				     dnssd_only = DNSSDOnly},
 	    NewKeys = [NewKey|Keys],
 	    NewZone = Zone#dnsxd_couch_zone{tsig_keys = NewKeys},
-	    change(DbRef, NewZone, Changes)
+	    make_changes(NewZone, Changes)
     end;
-change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys,
-				tombstone_period = TombstonePeriod} = Zone,
-       [{delete_tsig_key, Name}|Changes]) ->
+make_changes(#dnsxd_couch_zone{tsig_keys = Keys,
+			       tombstone_period = TombstonePeriod} = Zone,
+	     [{delete_tsig_key, Name}|Changes]) ->
     {Active, Expired} = lists:partition(fun is_active/1, Keys),
     case lists:keytake(Name, #dnsxd_couch_tk.name, Active) of
 	{value, #dnsxd_couch_tk{} = Key, NewActive} ->
@@ -185,12 +188,12 @@ change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys,
 	    NewKey = Key#dnsxd_couch_tk{tombstone = Tombstone},
 	    NewKeys = Expired ++ [NewKey|NewActive],
 	    NewZone = Zone#dnsxd_couch_zone{tsig_keys = NewKeys},
-	    change(DbRef, NewZone, Changes);
+	    make_changes(NewZone, Changes);
 	false ->
 	    {display_error, {"No TSIG named ~s", [Name]}}
     end;
-change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys} = Zone,
-       [{Action, {Name, Value}}|Changes])
+make_changes(#dnsxd_couch_zone{tsig_keys = Keys} = Zone,
+	     [{Action, {Name, Value}}|Changes])
   when Action =:= tsig_key_secret orelse
        Action =:= tsig_key_enabled orelse
        Action =:= tsig_key_dnssdonly ->
@@ -209,50 +212,19 @@ change(DbRef, #dnsxd_couch_zone{tsig_keys = Keys} = Zone,
 	    case NewKey =:= undefined of
 		true -> {error, {bad_value, Action, Value}};
 		false ->
-		    NewKeys = Expired ++ [NewKey|NewActive],
+		    NewKey2 = NewKey#dnsxd_couch_tk{set = dns:unix_time()},
+		    NewKeys = Expired ++ [NewKey2|NewActive],
 		    NewZone = Zone#dnsxd_couch_zone{tsig_keys = NewKeys},
-		    change(DbRef, NewZone, Changes)
+		    make_changes(NewZone, Changes)
 	    end;
 	false -> {display_error, {"No TSIG named ~s", [Name]}}
     end;
-change(DbRef, #dnsxd_couch_zone{} = Zone, [{dnssec_enabled, Bool}|Changes])
+make_changes(#dnsxd_couch_zone{} = Zone, [{dnssec_enabled, Bool}|Changes])
   when is_boolean(Bool) ->
     NewZone = Zone#dnsxd_couch_zone{dnssec_enabled = Bool,
 				    dnssec_enabled_set = dns:unix_time()},
-    change(DbRef, NewZone, Changes);
-change(DbRef, #dnsxd_couch_zone{dnssec_keys = Keys,
-				tombstone_period = TombstonePeriod} = Zone,
-       [{delete_dnssec_key, Id}|Changes]) ->
-    case lists:keytake(Id, #dnsxd_couch_dk.id, Keys) of
-	{value, #dnsxd_couch_dk{} = Key, Keys0} ->
-	    Tombstone = TombstonePeriod + dns:unix_time(),
-	    NewKey = Key#dnsxd_couch_dk{tombstone = Tombstone},
-	    NewKeys = [NewKey|Keys0],
-	    NewZone = Zone#dnsxd_couch_zone{dnssec_keys = NewKeys},
-	    change(DbRef, NewZone, Changes);
-	false ->
-	    {display_error, {"No DNSSEC key with ID ~s~n", [Id]}}
-    end;
-change(DbRef, #dnsxd_couch_zone{
-	 dnssec_nsec3_param = #dnsxd_couch_nsec3param{} = NSEC3Param} = Zone,
-       [{nsec3salt, Salt}|Changes]) when is_binary(Salt) ->
-    NewNSEC3Param = NSEC3Param#dnsxd_couch_nsec3param{salt = Salt},
-    NewZone = Zone#dnsxd_couch_zone{dnssec_nsec3_param = NewNSEC3Param,
-				    dnssec_nsec3_param_set = dns:unix_time()},
-    change(DbRef, NewZone, Changes);
-change(DbRef, #dnsxd_couch_zone{
-	 dnssec_nsec3_param = #dnsxd_couch_nsec3param{} = NSEC3Param} = Zone,
-       [{nsec3salt, Iter}|Changes]) when is_integer(Iter) ->
-    NewNSEC3Param = NSEC3Param#dnsxd_couch_nsec3param{iter = Iter},
-    NewZone = Zone#dnsxd_couch_zone{dnssec_nsec3_param = NewNSEC3Param,
-				    dnssec_nsec3_param_set = dns:unix_time()},
-    change(DbRef, NewZone, Changes);
-change(DbRef, #dnsxd_couch_zone{} = Zone, [{dnssec_siglife, SigLife}|Changes])
-  when is_integer(SigLife) ->
-    NewZone = Zone#dnsxd_couch_zone{dnssec_siglife = SigLife,
-				    dnssec_siglife_set = dns:unix_time()},
-    change(DbRef, NewZone, Changes);
-change(DbRef, #dnsxd_couch_zone{dnssec_keys = Keys} = Zone,
+    make_changes(NewZone, Changes);
+make_changes(#dnsxd_couch_zone{dnssec_keys = Keys} = Zone,
        [{add_dnssec_key, #dnsxd_dnssec_key{id = Id,
 					   incept = Incept,
 					   expire = Expire,
@@ -277,9 +249,41 @@ change(DbRef, #dnsxd_couch_zone{dnssec_keys = Keys} = Zone,
 				     data = Data},
 	    NewKeys = [NewKey|Keys],
 	    NewZone = Zone#dnsxd_couch_zone{dnssec_keys = NewKeys},
-	    change(DbRef, NewZone, Changes)
+	    make_changes(NewZone, Changes)
     end;
-change(DbRef, #dnsxd_couch_zone{soa_param = SOAP} = Zone,
+make_changes(#dnsxd_couch_zone{dnssec_keys = Keys,
+				tombstone_period = TombstonePeriod} = Zone,
+       [{delete_dnssec_key, Id}|Changes]) ->
+    case lists:keytake(Id, #dnsxd_couch_dk.id, Keys) of
+	{value, #dnsxd_couch_dk{} = Key, Keys0} ->
+	    Tombstone = TombstonePeriod + dns:unix_time(),
+	    NewKey = Key#dnsxd_couch_dk{tombstone = Tombstone},
+	    NewKeys = [NewKey|Keys0],
+	    NewZone = Zone#dnsxd_couch_zone{dnssec_keys = NewKeys},
+	    make_changes(NewZone, Changes);
+	false ->
+	    {display_error, {"No DNSSEC key with ID ~s~n", [Id]}}
+    end;
+make_changes(#dnsxd_couch_zone{
+	 dnssec_nsec3_param = #dnsxd_couch_nsec3param{} = NSEC3Param} = Zone,
+       [{nsec3salt, Salt}|Changes]) when is_binary(Salt) ->
+    NewNSEC3Param = NSEC3Param#dnsxd_couch_nsec3param{salt = Salt},
+    NewZone = Zone#dnsxd_couch_zone{dnssec_nsec3_param = NewNSEC3Param,
+				    dnssec_nsec3_param_set = dns:unix_time()},
+    make_changes(NewZone, Changes);
+make_changes(#dnsxd_couch_zone{
+	 dnssec_nsec3_param = #dnsxd_couch_nsec3param{} = NSEC3Param} = Zone,
+       [{nsec3iter, Iter}|Changes]) when is_integer(Iter) ->
+    NewNSEC3Param = NSEC3Param#dnsxd_couch_nsec3param{iter = Iter},
+    NewZone = Zone#dnsxd_couch_zone{dnssec_nsec3_param = NewNSEC3Param,
+				    dnssec_nsec3_param_set = dns:unix_time()},
+    make_changes(NewZone, Changes);
+make_changes(#dnsxd_couch_zone{} = Zone, [{dnssec_siglife, SigLife}|Changes])
+  when is_integer(SigLife) ->
+    NewZone = Zone#dnsxd_couch_zone{dnssec_siglife = SigLife,
+				    dnssec_siglife_set = dns:unix_time()},
+    make_changes(NewZone, Changes);
+make_changes(#dnsxd_couch_zone{soa_param = SOAP} = Zone,
        [{Field, Value}|Changes])
   when Field =:= mname orelse Field =:= rname orelse Field =:= refresh orelse
        Field =:= retry orelse Field =:= expire orelse Field =:= minimum ->
@@ -293,20 +297,184 @@ change(DbRef, #dnsxd_couch_zone{soa_param = SOAP} = Zone,
 	      end,
     NewZone = Zone#dnsxd_couch_zone{soa_param = NewSOAP,
 				    soa_param_set = dns:unix_time()},
-    change(DbRef, NewZone, Changes);
-change(DbRef, #dnsxd_couch_zone{} = Zone, [{zone_enabled, Bool}|Changes])
+    make_changes(NewZone, Changes);
+make_changes(#dnsxd_couch_zone{} = Zone, [{zone_enabled, Bool}|Changes])
   when is_boolean(Bool) ->
     NewZone = Zone#dnsxd_couch_zone{enabled = Bool},
-    change(DbRef, NewZone, Changes);
-change(DbRef, #dnsxd_couch_zone{} = Zone, [create_zone|Changes]) ->
-    change(DbRef, Zone, Changes);
-change(_DbRef, _Zone, [Change|_]) -> {error, {unknown_change, Change}}.
+    make_changes(NewZone, Changes);
+make_changes(#dnsxd_couch_zone{} = Zone, [create_zone|Changes]) ->
+    make_changes(Zone, Changes);
+make_changes(_Zone, [Change|_]) -> {error, {unknown_change, Change}}.
+
+-ifdef(TEST).
+
+make_changes_wrapper(A, B) ->
+    case make_changes(A, B) of
+	{display_error, _} -> display_error;
+	X -> X
+    end.
+
+make_changes_tsig_1_test_() ->
+    Now = dns:unix_time(),
+    Id = dnsxd_lib:new_id(),
+    Name = <<$a>>,
+    Secret = <<$b>>,
+    Enabled = false,
+    DNSSDOnly = false,
+    DTK = #dnsxd_tsig_key{id = Id, name = Name, secret = Secret,
+			  enabled = Enabled, dnssd_only = DNSSDOnly},
+    CTK = #dnsxd_couch_tk{id = Id, name = Name, secret = base64:encode(Secret),
+			  enabled = Enabled, dnssd_only = DNSSDOnly},
+    Tombstone = (#dnsxd_couch_zone{})#dnsxd_couch_zone.tombstone_period + Now,
+    Cases = [{#dnsxd_couch_zone{tsig_keys = [CTK]},
+	      #dnsxd_couch_zone{},
+	      [{add_tsig_key, DTK}]},
+	     {display_error,
+	      #dnsxd_couch_zone{tsig_keys = [CTK]},
+	      [{add_tsig_key, DTK}]},
+	     {display_error,
+	      #dnsxd_couch_zone{tsig_keys = [CTK#dnsxd_couch_tk{id = <<$b>>}]},
+	      [{add_tsig_key, DTK}]},
+	     {#dnsxd_couch_zone{tsig_keys = [CTK#dnsxd_couch_tk{
+					       tombstone = Tombstone}]},
+	      #dnsxd_couch_zone{tsig_keys = [CTK]},
+	      [{delete_tsig_key, <<$a>>}]},
+	     {display_error, #dnsxd_couch_zone{}, [{delete_tsig_key, <<$a>>}]}
+	    ],
+    [ ?_assertEqual(ZoneOut, make_changes_wrapper(ZoneIn, Changes))
+      || {ZoneOut, ZoneIn, Changes} <- Cases ].
+
+make_changes_tsig_2_test_() ->
+    Now = dns:unix_time(),
+    Name = <<$a>>,
+    TKA = #dnsxd_couch_tk{name = Name, secret = <<$b>>, enabled = true,
+			  dnssd_only = true},
+    TKB = TKA#dnsxd_couch_tk{set = Now},
+    Zone = #dnsxd_couch_zone{tsig_keys = [TKA]},
+    Cases = [{{tsig_key_secret, {Name, <<$c>>}},
+	      TKB#dnsxd_couch_tk{secret = base64:encode(<<$c>>)}},
+	     {{tsig_key_enabled, {Name, false}},
+	      TKB#dnsxd_couch_tk{enabled = false}},
+	     {{tsig_key_dnssdonly, {Name, false}},
+	      TKB#dnsxd_couch_tk{dnssd_only = false}}],
+    [ ?_assertEqual(Zone#dnsxd_couch_zone{tsig_keys = [NewTK]},
+		    make_changes(Zone, [Change])) || {Change, NewTK} <- Cases ].
+
+make_changes_tsig_3_test_() ->
+    Action = tsig_key_secret,
+    Name = <<$a>>,
+    Value = 333,
+    Zone = #dnsxd_couch_zone{tsig_keys = [#dnsxd_couch_tk{name = Name}]},
+    Cases = [{{error, {bad_value, Action, Value}}, [{Action, {Name, Value}}]},
+	     {display_error, [{Action, {<<$b>>, Value}}]}],
+    [ ?_assertEqual(Result, make_changes_wrapper(Zone, Changes))
+      || {Result, Changes} <- Cases ].
+
+make_changes_dnssec_enabled_test_() ->
+    ZoneA = #dnsxd_couch_zone{dnssec_enabled = false},
+    ZoneB = #dnsxd_couch_zone{dnssec_enabled = true},
+    Cases = [{ZoneB, ZoneA, true}, {ZoneA, ZoneB, false}],
+    [ ?_assertEqual(Result, make_changes(Zone, [{dnssec_enabled, Bool}]))
+      || {Result, Zone, Bool} <- Cases ].
+
+make_changes_add_dnssec_key_test_() ->
+    Id = dnsxd_lib:new_id(),
+    Now = dns:unix_time(),
+    DKRSA = #dnsxd_couch_dk_rsa{_ = base64:encode(<<42>>)},
+    DDKKey = lists:duplicate(3, <<1:32, 42>>),
+    KSK = false,
+    CDK = #dnsxd_couch_dk{id = Id, ksk = KSK, data = DKRSA,
+			  incept = Now, expire = Now, alg = 7},
+    DDK = #dnsxd_dnssec_key{id = Id, ksk = KSK, key = DDKKey, incept = Now,
+			    expire = Now, alg = 7},
+    ZoneA = #dnsxd_couch_zone{dnssec_keys = [CDK]},
+    ZoneB = ZoneA#dnsxd_couch_zone{dnssec_keys = []},
+    Cases = [{display_error, ZoneA, {add_dnssec_key, DDK}},
+	     {ZoneA, ZoneB, {add_dnssec_key, DDK}}],
+    [ ?_assertEqual(Result, make_changes_wrapper(Zone, [Change]))
+      || {Result, Zone, Change} <- Cases ].
+
+make_changes_delete_dnssec_key_test_() ->
+    ZoneA = #dnsxd_couch_zone{},
+    TombstonePeriod = ZoneA#dnsxd_couch_zone.tombstone_period,
+    DKA = #dnsxd_couch_dk{id = <<$a>>},
+    DKB = DKA#dnsxd_couch_dk{tombstone = dns:unix_time() + TombstonePeriod},
+    ZoneB = ZoneA#dnsxd_couch_zone{dnssec_keys = [DKA]},
+    ZoneC = ZoneA#dnsxd_couch_zone{dnssec_keys = [DKB]},
+    Cases = [{ZoneC, ZoneB}, {display_error, ZoneA}],
+    Changes = [{delete_dnssec_key, <<$a>>}],
+    [ ?_assertEqual(Result, make_changes_wrapper(Input, Changes))
+      || {Result, Input} <- Cases ].
+
+make_changes_nsec3_test_() ->
+    Now = dns:unix_time(),
+    NPA = #dnsxd_couch_nsec3param{salt = <<$s>>, iter = 1},
+    NPB = NPA#dnsxd_couch_nsec3param{salt = <<$n>>},
+    NPC = NPA#dnsxd_couch_nsec3param{iter = 2},
+    Zone = #dnsxd_couch_zone{dnssec_nsec3_param  = NPA},
+    Cases = [{{nsec3salt, <<$n>>}, NPB}, {{nsec3iter, 2}, NPC}],
+    [ ?_assertEqual(Zone#dnsxd_couch_zone{dnssec_nsec3_param = NP,
+					  dnssec_nsec3_param_set = Now},
+		    make_changes(Zone, [Change]))
+      || {Change, NP} <- Cases ].
+
+make_changes_siglife_test() ->
+    ?assertEqual(#dnsxd_couch_zone{dnssec_siglife = 42},
+		 make_changes(#dnsxd_couch_zone{}, [{dnssec_siglife, 42}])).
+
+make_changes_soa_test_() ->
+    SOAP = #dnsxd_couch_sp{set = dns:unix_time(), mname = <<$a>>,
+			   rname = <<$a>>, _ = 7},
+    Zone = #dnsxd_couch_zone{soa_param = SOAP},
+    MName = <<$m>>,
+    MNameChange = {mname, MName},
+    MNameSOAP = SOAP#dnsxd_couch_sp{mname = MName},
+    RName = <<$r>>,
+    RNameChange = {rname, RName},
+    RNameSOAP = SOAP#dnsxd_couch_sp{rname = RName},
+    N = 42,
+    RefreshChange = {refresh, N},
+    RefreshSOAP = SOAP#dnsxd_couch_sp{refresh = N},
+    RetryChange = {retry, N},
+    RetrySOAP = SOAP#dnsxd_couch_sp{retry = N},
+    ExpireChange = {expire, N},
+    ExpireSOAP = SOAP#dnsxd_couch_sp{expire = N},
+    MinimumChange = {minimum, N},
+    MinimumSOAP = SOAP#dnsxd_couch_sp{minimum = N},
+    Cases = [{MNameSOAP, MNameChange}, {RNameSOAP, RNameChange},
+	     {RefreshSOAP, RefreshChange}, {RetrySOAP, RetryChange},
+	     {ExpireSOAP, ExpireChange}, {MinimumSOAP, MinimumChange}],
+    [ ?_assertEqual(Zone#dnsxd_couch_zone{soa_param = NewSOAP},
+		    make_changes(Zone, [Change]))
+      || {NewSOAP, Change} <- Cases ].
+
+makes_changes_enabled_test_() ->
+    [ ?_assertEqual(#dnsxd_couch_zone{enabled = Bool},
+		    make_changes(#dnsxd_couch_zone{}, [{zone_enabled, Bool}]))
+	|| Bool <- [ true, false ] ].
+
+make_changes_misc_test_() ->
+    Zone = #dnsxd_couch_zone{},
+    Cases = [{Zone, create_zone}, {{error, {unknown_change, foo}}, foo}],
+    [ ?_assertEqual(Result, make_changes(Zone, [Change]))
+      || {Result, Change} <- Cases ].
+
+-endif.
 
 %% is_active = whether term is live as far as dnsxd is concerned
 %% is_current = whether term is live as far as dnsxd_couch is concerned
 %% the difference? dnsxd_couch keeps dead items around a little while to
 %% prevent zombies from showing up
 is_active(#dnsxd_couch_tk{tombstone = Tombstone}) -> not is_integer(Tombstone).
+
+-ifdef(TEST).
+
+is_active_test_() ->
+    Cases = [{true, #dnsxd_couch_tk{}},
+	     {false, #dnsxd_couch_tk{tombstone = 1}}],
+    [ ?_assertEqual(Result, is_active(Case)) || {Result, Case} <- Cases ].
+
+-endif.
 
 %%%===================================================================
 %%% Internal functions
@@ -343,6 +511,29 @@ check_update_prereqs([{not_exist, NameM, Type}|PreReqs], RRs) ->
 		       Name =:= SN andalso Type =:= ST end, RRs),
     if Exists -> yxrrset;
        true -> check_update_prereqs(PreReqs, RRs) end.
+
+-ifdef(TEST).
+
+check_update_prereqs_test_() ->
+    Cases = [{nxdomain, [{exist, <<$a>>}], []},
+	     {ok, [{exist, <<$a>>}], [#dnsxd_couch_rr{name = <<$a>>}]},
+	     {nxrrset, [{exist, <<$a>>, 1}], [#dnsxd_couch_rr{name = <<$a>>}]},
+	     {ok, [{exist, <<$a>>, 1}],
+	      [#dnsxd_couch_rr{name = <<$a>>, type = 1}]},
+	     {nxrrset, [{exist, <<$a>>, 1, <<$a>>}],
+	      [#dnsxd_couch_rr{name = <<$a>>, type = 1}]},
+	     {ok, [{exist, <<$a>>, 1, <<$a>>}],
+	      [#dnsxd_couch_rr{name = <<$a>>, type = 1, data = <<$a>>}]},
+	     {yxdomain, [{not_exist, <<$a>>}],
+	      [#dnsxd_couch_rr{name = <<$a>>}]},
+	     {ok, [{not_exist, <<$a>>}], []},
+	     {yxrrset, [{not_exist, <<$a>>, 1}],
+	      [#dnsxd_couch_rr{name = <<$a>>, type = 1}]},
+	     {ok, [{not_exist, <<$a>>, 1}], [#dnsxd_couch_rr{name = <<$a>>}]}],
+    [ ?_assertEqual(Result, check_update_prereqs(PreReq, RR))
+      || {Result, PreReq, RR} <- Cases ].
+
+-endif.
 
 update_rr(_Key, [], RRs) -> RRs;
 update_rr(Key, [{delete, Name}|Updates], RRs) ->
@@ -381,7 +572,7 @@ update_rr(Key, [{add, Name, Type, TTL, Data, LeaseLength}|Updates], RRs) ->
     Now = dns:unix_time(),
     Expire = case is_integer(LeaseLength) andalso LeaseLength > 0 of
 		 true -> Now + LeaseLength;
-		 false -> null
+		 false -> undefined
 	     end,
     case Match of
 	[] ->
@@ -402,15 +593,150 @@ update_rr(Key, [{add, Name, Type, TTL, Data, LeaseLength}|Updates], RRs) ->
 	    update_rr(Key, Updates, NewRRs)
     end.
 
+-ifdef(TEST).
+
+%% all these tests have a race condition - change update_rr to accept a Now
+
+update_rr_delete_1_test() ->
+    Key = undefined,
+    Update = {delete, <<$a>>},
+    RRA = #dnsxd_couch_rr{name = <<$a>>},
+    RRB = #dnsxd_couch_rr{name = <<$b>>},
+    In = [RRA, RRB],
+    Out = [RRA#dnsxd_couch_rr{expire = dns:unix_time() - 1}, RRB],
+    ?assertEqual(Out, update_rr(Key, [Update], In)).
+
+update_rr_delete_2_test() ->
+    Key = undefined,
+    Update = {delete, <<$a>>, 1},
+    RRA = #dnsxd_couch_rr{name = <<$a>>, type = 1},
+    RRB = #dnsxd_couch_rr{name = <<$b>>, type = 1},
+    In = [RRA, RRB],
+    Out = [RRA#dnsxd_couch_rr{expire = dns:unix_time() - 1}, RRB],
+    ?assertEqual(Out, update_rr(Key, [Update], In)).
+
+update_rr_delete_3_test() ->
+    Key = undefined,
+    Update = {delete, <<$a>>, 1, <<$a>>},
+    RRA = #dnsxd_couch_rr{name = <<$a>>, type = 1, data = <<$a>>},
+    RRB = #dnsxd_couch_rr{name = <<$a>>, type = 1, data = <<$b>>},
+    In = [RRA, RRB],
+    Out = [RRA#dnsxd_couch_rr{expire = dns:unix_time() - 1}, RRB],
+    ?assertEqual(Out, update_rr(Key, [Update], In)).
+
+update_rr_add_1_test() ->
+    Key = undefined,
+    Name = <<$a>>,
+    Type = 1,
+    TTL = 2,
+    Data = <<$a>>,
+    LeaseLength = 3,
+    Now = dns:unix_time(),
+    Update = {add, Name, Type, TTL, Data, LeaseLength},
+    Out = [#dnsxd_couch_rr{id = undefined, name = Name, class = ?DNS_CLASS_IN,
+			   type = Type, ttl = TTL, data = Data, incept = Now,
+			   expire = Now + LeaseLength}],
+    Fun = fun() ->
+		  [ RR#dnsxd_couch_rr{id = undefined}
+		    || RR <- update_rr(Key, [Update], []) ]
+	  end,
+    ?assertEqual(Out, Fun()).
+
+update_rr_add_2_test() ->
+    Key = undefined,
+    Name = <<$a>>,
+    Type = 1,
+    TTL = 2,
+    Data = <<$a>>,
+    LeaseLength = undefined,
+    Now = dns:unix_time(),
+    Update = {add, Name, Type, TTL, Data, LeaseLength},
+    Out = [#dnsxd_couch_rr{id = undefined, name = Name, class = ?DNS_CLASS_IN,
+			   type = Type, ttl = TTL, data = Data, incept = Now,
+			   expire = undefined}],
+    Fun = fun() ->
+		  [ RR#dnsxd_couch_rr{id = undefined}
+		    || RR <- update_rr(Key, [Update], []) ]
+	  end,
+    ?assertEqual(Out, Fun()).
+
+update_rr_add_3_test() ->
+    Key = undefined,
+    Name = <<$a>>,
+    Type = 1,
+    TTL = 2,
+    Data = <<$a>>,
+    LeaseLength = 3,
+    Now = dns:unix_time(),
+    Update = {add, Name, Type, TTL, Data, LeaseLength},
+    RRA = #dnsxd_couch_rr{name = Name, class = ?DNS_CLASS_IN, type = Type,
+			  ttl = TTL, data = Data, incept = Now,
+			  expire = Now + 3600},
+    RRB = RRA#dnsxd_couch_rr{set = Now, expire = Now + LeaseLength},
+    Out = [RRB],
+    ?assertEqual(Out, update_rr(Key, [Update], [RRA])).
+
+update_rr_add_4_test() ->
+    Key = undefined,
+    Name = <<$a>>,
+    Type = 1,
+    TTL = 2,
+    Data = <<$a>>,
+    LeaseLength = 3,
+    Now = dns:unix_time(),
+    Update = {add, Name, Type, TTL, Data, LeaseLength},
+    RRA1 = #dnsxd_couch_rr{name = Name, class = ?DNS_CLASS_IN, type = Type,
+			   ttl = TTL, data = Data, incept = Now,
+			   expire = Now + 3600},
+    RRA2 = RRA1#dnsxd_couch_rr{set = Now, expire = Now + LeaseLength},
+    RRB1 = #dnsxd_couch_rr{name = Name, class = ?DNS_CLASS_IN, type = Type,
+			   ttl = TTL, data = Data, incept = Now,
+			   expire = Now + 3600},
+    RRB2 = RRB1#dnsxd_couch_rr{set = Now, expire = Now - 1},
+    In = [RRA1, RRB1],
+    Out = [RRB2, RRA2],
+    ?assertEqual(Out, update_rr(Key, [Update], In)).
+
+-endif.
+
 reap(Now, TombstonePeriod, Recs) when is_list(Recs) ->
     TombstonedRecs = [add_tombstone(Rec, Now, TombstonePeriod) || Rec <- Recs],
     [Rec || Rec <- TombstonedRecs, is_current(Now, Rec)].
+
+-ifdef(TEST).
+
+reap_test() ->
+    Now = 10,
+    TombstonePeriod = 5,
+    A = #dnsxd_couch_rr{expire = Now},
+    B = #dnsxd_couch_rr{expire = Now - 1},
+    C = #dnsxd_couch_rr{expire = Now - TombstonePeriod - 1},
+    In = [A, B, C],
+    Out = [ A, B#dnsxd_couch_rr{tombstone = Now - 1 + TombstonePeriod} ],
+    ?assertEqual(Out, reap(Now, TombstonePeriod, In)).
+
+-endif.
 
 add_tombstone(#dnsxd_couch_rr{expire = Expires} = RR, Now, TombstonePeriod)
   when is_integer(Expires) andalso Expires < Now ->
     Tombstone = Expires + TombstonePeriod,
     RR#dnsxd_couch_rr{tombstone = Tombstone};
 add_tombstone(Rec, _Now, _TombstonePeriod) -> Rec.
+
+-ifdef(TEST).
+
+add_tombstone_test_() ->
+    Now = 10,
+    TombstonePeriod = 5,
+    Cases = [{#dnsxd_couch_rr{id = <<$a>>, expire = Now},
+	      #dnsxd_couch_rr{id = <<$a>>, expire = Now}},
+	     {#dnsxd_couch_rr{id = <<$b>>, expire = Now - 1},
+	      #dnsxd_couch_rr{id = <<$b>>, expire = Now - 1,
+			      tombstone = Now - 1 + TombstonePeriod}}],
+    [ ?_assertEqual(Out, add_tombstone(In, Now, TombstonePeriod))
+      || {In, Out} <- Cases ].
+
+-endif.
 
 is_current(Now, #dnsxd_couch_rr{tombstone = Tombstone})
   when is_integer(Tombstone) -> is_current(Now, Tombstone);
@@ -420,6 +746,22 @@ is_current(Now, #dnsxd_couch_dk{tombstone = Tombstone})
   when is_integer(Tombstone) -> is_current(Now, Tombstone);
 is_current(_Now, Rec) when is_tuple(Rec) -> true;
 is_current(Now, Tombstone) when is_integer(Tombstone) -> Now < Tombstone.
+
+-ifdef(TEST).
+
+is_current_test_() ->
+    Now = 10,
+    Cases = [{#dnsxd_couch_rr{tombstone = 5}, false},
+	     {#dnsxd_couch_rr{tombstone = 15}, true},
+	     {#dnsxd_couch_tk{tombstone = 5}, false},
+	     {#dnsxd_couch_tk{tombstone = 15}, true},
+	     {#dnsxd_couch_dk{tombstone = 5}, false},
+	     {#dnsxd_couch_dk{tombstone = 15}, true},
+	     {#dnsxd_couch_dk{tombstone = undefined}, true}],
+    [ ?_assertEqual(Expect, is_current(Now, Input))
+      || {Input, Expect} <- Cases ].
+
+-endif.
 
 decode_doc({DocProps}) -> decode_doc(DocProps);
 decode_doc(DocProps) ->
@@ -432,6 +774,19 @@ decode_doc(DocProps) ->
 		_ -> {error, not_zone}
 	    end
     end.
+
+-ifdef(TEST).
+
+decode_doc_1_test() ->
+    DeletedDoc = {[{<<"_deleted">>, true}]},
+    ?assertEqual({error, deleted}, decode_doc(DeletedDoc)).
+
+decode_doc_2_test() ->
+    Zone = #dnsxd_couch_zone{},
+    ZoneDoc = {encode(Zone)},
+    ?assertEqual(Zone, decode_doc(ZoneDoc)).
+
+-endif.
 
 decode({List}) when is_list(List) -> decode(List);
 decode(List) when is_list(List) ->
@@ -463,6 +818,7 @@ decode(Tag, Field, List) ->
 			is_binary(MebeBase64) ->
 	    try base64:decode(MebeBase64)
 	    catch _:_ -> MebeBase64 end;
+	null -> undefined;
 	Value -> Value
     end.
 
@@ -531,6 +887,32 @@ get_value(Key, List, Default) ->
 	false -> Default
     end.
 
+-ifdef(TEST).
+
+encodecode_test_() ->
+    Zone1 = #dnsxd_couch_zone{},
+    Zone2 = #dnsxd_couch_zone{rev = <<$a>>},
+    Zone3 = #dnsxd_couch_zone{meta = {[]}},
+    SOAParam = #dnsxd_couch_sp{mname = <<$m>>, rname = <<$r>>, _ = $r},
+    Zone4 = #dnsxd_couch_zone{soa_param = SOAParam},
+    RR = [#dnsxd_couch_rr{id = <<$a>>, incept = $a, name = <<$a>>, class = $a,
+			  type = 97, ttl = $a, data = <<$a>>},
+	  #dnsxd_couch_rr{id = <<$b>>, incept = $b, name = <<$b>>,
+			  class = ?DNS_CLASS_IN, type = ?DNS_TYPE_A, ttl = $b,
+			  data = #dns_rrdata_a{ip = <<"127.0.0.1">>}}],
+    Zone5 = #dnsxd_couch_zone{rr = RR},
+    TK = #dnsxd_couch_tk{name = <<$t>>, secret = <<$s>>},
+    Zone6 = #dnsxd_couch_zone{tsig_keys = [TK]},
+    Data = #dnsxd_couch_dk_rsa{e = <<$e>>, n = <<$n>>, d = <<$d>>},
+    DK = #dnsxd_couch_dk{id = <<$a>>, alg = ?DNS_ALG_NSEC3RSASHA1, data = Data},
+    Zone7 = #dnsxd_couch_zone{dnssec_keys = [DK]},
+    NSEC3Param = #dnsxd_couch_nsec3param{salt = <<$s>>, iter = $s, alg = $s},
+    Zone8 = #dnsxd_couch_zone{dnssec_nsec3_param = NSEC3Param},
+    Zones = [Zone1, Zone2, Zone3, Zone4, Zone5, Zone6, Zone7, Zone8],
+    [ ?_assertEqual(Zone, decode(encode(Zone))) || Zone <- Zones ].
+
+-endif.
+
 merge(#dnsxd_couch_zone{name = ZoneName} = Winner,
       #dnsxd_couch_zone{name = ZoneName} = Loser) ->
     MergeFuns = [ fun merge_enabled/2,
@@ -550,43 +932,160 @@ merge(Winner, Loser, [Fun|Funs]) ->
     NewWinner = Fun(Winner, Loser),
     merge(NewWinner, Loser, Funs).
 
+-ifdef(TEST).
+
+merge_test() ->
+    Zone = #dnsxd_couch_zone{},
+    ?assertEqual(Zone, merge(Zone, Zone)).
+
+-endif.
+
 %% simple merges - just go for whichever was set later
 merge_enabled(#dnsxd_couch_zone{enabled_set = TW} = Winner,
 	      #dnsxd_couch_zone{enabled = Enabled, enabled_set = TL})
-  when TL > TW -> Winner#dnsxd_couch_zone{enabled = Enabled};
+  when TL > TW -> Winner#dnsxd_couch_zone{enabled = Enabled, enabled_set = TL};
 merge_enabled(#dnsxd_couch_zone{} = Winner, #dnsxd_couch_zone{}) -> Winner.
+
+-ifdef(TEST).
+
+merge_enabled1_test() ->
+    A = #dnsxd_couch_zone{rev = a, enabled_set = 1, enabled = 1},
+    B = #dnsxd_couch_zone{rev = b, enabled_set = 2, enabled = 2},
+    O = #dnsxd_couch_zone{rev = a, enabled_set = 2, enabled = 2},
+    ?assertEqual(O, merge_enabled(A, B)).
+
+merge_enabled2_test() ->
+    A = #dnsxd_couch_zone{rev = a, axfr_enabled_set = 2, axfr_enabled = 2},
+    B = #dnsxd_couch_zone{rev = b, axfr_enabled_set = 2, axfr_enabled = 2},
+    O = A,
+    ?assertEqual(O, merge_enabled(A, B)).
+
+-endif.
 
 merge_axfr_enabled(#dnsxd_couch_zone{axfr_enabled_set = TW} = Winner,
 		   #dnsxd_couch_zone{axfr_enabled = Enabled,
-				     axfr_enabled_set = TL})
-  when TL > TW -> Winner#dnsxd_couch_zone{enabled = Enabled};
+				     axfr_enabled_set = TL}) when TL > TW ->
+    Winner#dnsxd_couch_zone{axfr_enabled = Enabled, axfr_enabled_set = TL};
 merge_axfr_enabled(#dnsxd_couch_zone{} = Winner, #dnsxd_couch_zone{}) -> Winner.
+
+-ifdef(TEST).
+
+merge_axfr_enabled_1_test() ->
+    A = #dnsxd_couch_zone{rev = a, axfr_enabled_set = 1, axfr_enabled = 1},
+    B = #dnsxd_couch_zone{rev = b, axfr_enabled_set = 2, axfr_enabled = 2},
+    O = #dnsxd_couch_zone{rev = a, axfr_enabled_set = 2, axfr_enabled = 2},
+    ?assertEqual(O, merge_axfr_enabled(A, B)).
+
+merge_axfr_enabled_2_test() ->
+    A = #dnsxd_couch_zone{rev = a, axfr_enabled_set = 2, axfr_enabled = 2},
+    B = #dnsxd_couch_zone{rev = b, axfr_enabled_set = 2, axfr_enabled = 2},
+    O = A,
+    ?assertEqual(O, merge_axfr_enabled(A, B)).
+
+-endif.
 
 merge_soa_param(#dnsxd_couch_zone{soa_param_set = TW} = Winner,
 		#dnsxd_couch_zone{soa_param = SOAParam, soa_param_set = TL})
-  when TL > TW -> Winner#dnsxd_couch_zone{soa_param = SOAParam};
+  when TL > TW ->
+    Winner#dnsxd_couch_zone{soa_param = SOAParam, soa_param_set = TL};
 merge_soa_param(#dnsxd_couch_zone{} = Winner, #dnsxd_couch_zone{}) -> Winner.
+
+-ifdef(TEST).
+
+merge_soa_param_1_test() ->
+    A = #dnsxd_couch_zone{rev = a, soa_param_set = 1, soa_param = 1},
+    B = #dnsxd_couch_zone{rev = b, soa_param_set = 2, soa_param = 2},
+    O = #dnsxd_couch_zone{rev = a, soa_param_set = 2, soa_param = 2},
+    ?assertEqual(O, merge_soa_param(A, B)).
+
+merge_soa_param_2_test() ->
+    A = #dnsxd_couch_zone{rev = a, soa_param_set = 2, soa_param = 2},
+    B = #dnsxd_couch_zone{rev = b, soa_param_set = 2, soa_param = 2},
+    O = A,
+    ?assertEqual(O, merge_soa_param(A, B)).
+
+-endif.
 
 merge_dnssec_enabled(#dnsxd_couch_zone{dnssec_enabled_set = TW} = Winner,
 		     #dnsxd_couch_zone{dnssec_enabled = DNSSEC,
-				       dnssec_enabled_set = TL})
-  when TL > TW -> Winner#dnsxd_couch_zone{dnssec_enabled = DNSSEC};
+				       dnssec_enabled_set = TL}) when TL > TW ->
+    Winner#dnsxd_couch_zone{dnssec_enabled = DNSSEC, dnssec_enabled_set = TL};
 merge_dnssec_enabled(#dnsxd_couch_zone{} = Winner, #dnsxd_couch_zone{}) ->
     Winner.
+
+-ifdef(TEST).
+
+merge_dnssec_enabled_1_test() ->
+    A = #dnsxd_couch_zone{rev = a, dnssec_enabled_set = 1, dnssec_enabled = 1},
+    B = #dnsxd_couch_zone{rev = b, dnssec_enabled_set = 2, dnssec_enabled = 2},
+    O = #dnsxd_couch_zone{rev = a, dnssec_enabled_set = 2, dnssec_enabled = 2},
+    ?assertEqual(O, merge_dnssec_enabled(A, B)).
+
+merge_dnssec_enabled_2_test() ->
+    A = #dnsxd_couch_zone{rev = a, dnssec_enabled_set = 3, dnssec_enabled = 3},
+    B = #dnsxd_couch_zone{rev = b, dnssec_enabled_set = 2, dnssec_enabled = 2},
+    O = A,
+    ?assertEqual(O, merge_dnssec_enabled(A, B)).
+
+-endif.
 
 merge_dnssec_nsec3param(#dnsxd_couch_zone{dnssec_nsec3_param_set = TW} = Winner,
 			#dnsxd_couch_zone{dnssec_nsec3_param = DNSSEC,
 					  dnssec_nsec3_param_set = TL})
-  when TL > TW -> Winner#dnsxd_couch_zone{dnssec_nsec3_param = DNSSEC};
+  when TL > TW ->
+    Winner#dnsxd_couch_zone{dnssec_nsec3_param = DNSSEC,
+			    dnssec_nsec3_param_set = TL};
 merge_dnssec_nsec3param(#dnsxd_couch_zone{} = Winner, #dnsxd_couch_zone{}) ->
     Winner.
 
+-ifdef(TEST).
+
+merge_dnssec_nsec3param_1_test() ->
+    A = #dnsxd_couch_zone{rev = a,
+			  dnssec_nsec3_param_set = 1,
+			  dnssec_nsec3_param = 1},
+    B = #dnsxd_couch_zone{rev = b,
+			  dnssec_nsec3_param_set = 2,
+			  dnssec_nsec3_param = 2},
+    O = #dnsxd_couch_zone{rev = a,
+			  dnssec_nsec3_param_set = 2,
+			  dnssec_nsec3_param = 2},
+    ?assertEqual(O, merge_dnssec_nsec3param(A, B)).
+
+merge_dnssec_nsec3param_2_test() ->
+    A = #dnsxd_couch_zone{rev = a,
+			  dnssec_nsec3_param_set = 3,
+			  dnssec_nsec3_param = 3},
+    B = #dnsxd_couch_zone{rev = b,
+			  dnssec_nsec3_param_set = 2,
+			  dnssec_nsec3_param = 2},
+    O = A,
+    ?assertEqual(O, merge_dnssec_nsec3param(A, B)).
+
+-endif.
+
 merge_dnssec_siglife(#dnsxd_couch_zone{dnssec_siglife_set = TW} = Winner,
 		     #dnsxd_couch_zone{dnssec_siglife = SigLife,
-				       dnssec_siglife_set = TL})
-  when TL > TW -> Winner#dnsxd_couch_zone{dnssec_siglife = SigLife};
+				       dnssec_siglife_set = TL}) when TL > TW ->
+    Winner#dnsxd_couch_zone{dnssec_siglife = SigLife, dnssec_siglife_set = TL};
 merge_dnssec_siglife(#dnsxd_couch_zone{} = Winner, #dnsxd_couch_zone{}) ->
     Winner.
+
+-ifdef(TEST).
+
+merge_dnssec_siglife_1_test() ->
+    A = #dnsxd_couch_zone{rev = a, dnssec_siglife_set = 1, dnssec_siglife = 1},
+    B = #dnsxd_couch_zone{rev = b, dnssec_siglife_set = 2, dnssec_siglife = 2},
+    O = #dnsxd_couch_zone{rev = a, dnssec_siglife_set = 2, dnssec_siglife = 2},
+    ?assertEqual(O, merge_dnssec_siglife(A, B)).
+
+merge_dnssec_siglife_2_test() ->
+    A = #dnsxd_couch_zone{rev = a, dnssec_siglife_set = 3, dnssec_siglife = 3},
+    B = #dnsxd_couch_zone{rev = b, dnssec_siglife_set = 2, dnssec_siglife = 2},
+    O = A,
+    ?assertEqual(O, merge_dnssec_siglife(A, B)).
+
+-endif.
 
 %% messier merges
 
@@ -599,12 +1098,43 @@ merge_rr(#dnsxd_couch_zone{rr = WRRs} = Winner, #dnsxd_couch_zone{rr = LRRs}) ->
 			   CombinedRRs),
     Winner#dnsxd_couch_zone{rr = NewRRs}.
 
+-ifdef(TEST).
+
+merge_rr_test() ->
+    RRA = [#dnsxd_couch_rr{id = 1, set = 1, _ = 1},
+	   #dnsxd_couch_rr{id = 2, set = 2, _ = 2},
+	   #dnsxd_couch_rr{id = 3, set = 3, _ = 3}],
+    RRB = [#dnsxd_couch_rr{id = 1, set = 1, _ = 1},
+	   #dnsxd_couch_rr{id = 2, set = 3, _ = 3},
+	   #dnsxd_couch_rr{id = 5, set = 5, _ = 5}],
+    OutRR = [#dnsxd_couch_rr{id = 1, set = 1, _ = 1},
+	     #dnsxd_couch_rr{id = 2, set = 3, _ = 3},
+	     #dnsxd_couch_rr{id = 3, set = 3, _ = 3},
+	     #dnsxd_couch_rr{id = 5, set = 5, _ = 5}],
+    InA = #dnsxd_couch_zone{rr = RRA},
+    InB = #dnsxd_couch_zone{rr = RRB},
+    Out = #dnsxd_couch_zone{rr = OutRR},
+    ?assertEqual(Out, merge_rr(InA, InB)).
+
+-endif.
+
 %% keeping the common hosts is probably preferable
 merge_axfr_hosts(#dnsxd_couch_zone{axfr_hosts = HW} = Winner,
 		 #dnsxd_couch_zone{axfr_hosts = HL}) ->
     Hosts = sets:to_list(sets:intersection(sets:from_list(HW),
 					   sets:from_list(HL))),
     Winner#dnsxd_couch_zone{axfr_hosts = Hosts}.
+
+-ifdef(TEST).
+
+merge_axfr_hosts_test() ->
+    InA = #dnsxd_couch_zone{axfr_hosts = [<<"127.0.0.1">>, <<"127.0.0.2">>]},
+    InB = #dnsxd_couch_zone{axfr_hosts = [<<"127.0.0.2">>, <<"127.0.0.3">>]},
+    Out = #dnsxd_couch_zone{axfr_hosts = [<<"127.0.0.2">>]},
+    ?assertEqual(Out, merge_axfr_hosts(InA, InB)).
+
+-endif.
+
 
 %% tsig_keys
 merge_tsig_keys(#dnsxd_couch_zone{tsig_keys = WKeys} = Winner,
@@ -615,6 +1145,18 @@ merge_tsig_keys(#dnsxd_couch_zone{tsig_keys = WKeys} = Winner,
 			    CombinedKeys),
     Winner#dnsxd_couch_zone{tsig_keys = NewKeys}.
 
+-ifdef(TEST).
+
+merge_tsig_keys_test() ->
+    TKA = #dnsxd_couch_tk{id = a, set = 2, _ = 2},
+    TKB = #dnsxd_couch_tk{id = a, set = 3, _ = 3},
+    InA = #dnsxd_couch_zone{tsig_keys = [TKA]},
+    InB = #dnsxd_couch_zone{tsig_keys = [TKB]},
+    Out = #dnsxd_couch_zone{tsig_keys = [TKB]},
+    ?assertEqual(Out, merge_tsig_keys(InA, InB)).
+
+-endif.
+
 %% dnssec_keys
 merge_dnssec_keys(#dnsxd_couch_zone{dnssec_keys = WKeys} = Winner,
 		  #dnsxd_couch_zone{dnssec_keys = LKeys}) ->
@@ -623,6 +1165,18 @@ merge_dnssec_keys(#dnsxd_couch_zone{dnssec_keys = WKeys} = Winner,
 			    #dnsxd_couch_dk.set,
 			    CombinedKeys),
     Winner#dnsxd_couch_zone{dnssec_keys = NewKeys}.
+
+-ifdef(TEST).
+
+merge_dnssec_keys_test() ->
+    DKA = #dnsxd_couch_dk{id = a, set = 2, _ = 2},
+    DKB = #dnsxd_couch_dk{id = a, set = 3, _ = 3},
+    InA = #dnsxd_couch_zone{dnssec_keys = [DKA]},
+    InB = #dnsxd_couch_zone{dnssec_keys = [DKB]},
+    Out = #dnsxd_couch_zone{dnssec_keys = [DKB]},
+    ?assertEqual(Out, merge_dnssec_keys(InA, InB)).
+
+-endif.
 
 %% helpers
 
@@ -665,3 +1219,12 @@ find_dupe_tupletag(TagPos, [Tuple|Tuples], Dict) ->
     Tag = element(TagPos, Tuple),
     NewDict = dict:update_counter(Tag, 1, Dict),
     find_dupe_tupletag(TagPos, Tuples, NewDict).
+
+-ifdef(TEST).
+
+dedupe_tuples_test() ->
+    In = [ {a, 2, 2}, {a, 1, 1}, {a, 3, 3} ],
+    Out = [ {a, 3, 3}] ,
+    ?assertEqual(Out, dedupe_tuples(1, 2, In)).
+
+-endif.
