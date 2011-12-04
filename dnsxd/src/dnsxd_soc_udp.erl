@@ -55,7 +55,7 @@ open(IP, Port) ->
 	{error, eacces} = ErrEaccess ->
 	    case dnsxd_lib:use_procket() of
 		true ->
-		    case dnsxd_lib:procket_open(Port, udp, dgram) of
+		    case dnsxd_lib:procket_open(IP, Port, udp, dgram) of
 			{ok, Fd} ->
 			    FdOpts = [{fd, Fd}|Opts],
 			    gen_udp:open(Port, FdOpts);

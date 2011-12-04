@@ -24,7 +24,7 @@
 -export([ensure_apps_started/1, new_id/0,
 	 active_rr_fun/0, active_rr_fun/1, active_rr/2,
 	 to_dns_rr/1, to_dns_rr/2, is_dnssd_rr/2,
-	 use_procket/0, procket_open/3, cancel_timer/1]).
+	 use_procket/0, procket_open/4, cancel_timer/1]).
 
 %%%===================================================================
 %%% API
@@ -130,10 +130,15 @@ use_procket() ->
 	_ -> false
     end.
 
-procket_open(Port, Protocol, Type) ->
+procket_open(IP, Port, Protocol, Type) ->
     {ok, Props} = dnsxd:get_env(procket),
     Progname = proplists:get_value(progname, Props, "procket"),
-    Opts = [{progname, Progname}, {protocol, Protocol}, {type, Type}],
+    Family = case tuple_size(IP) of
+		 4 -> inet;
+		 8 -> inet6
+	     end,
+    Opts = [{progname, Progname}, {protocol, Protocol}, {type, Type},
+	    {family, Family}],
     procket:open(Port, Opts).
 
 cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;

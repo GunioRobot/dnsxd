@@ -66,7 +66,7 @@ listen(#dnsxd_if_spec{protocol = tcp, ip = IP, port = Port}) ->
 	{error, eacces} = ErrEacces ->
 	    case dnsxd_lib:use_procket() of
 		true ->
-		    case dnsxd_lib:procket_open(Port, tcp, stream) of
+		    case dnsxd_lib:procket_open(IP, Port, tcp, stream) of
 			{ok, Fd} ->
 			    FdOpts = [{fd, Fd}|Opts],
 			    gen_tcp:listen(Port, FdOpts);
