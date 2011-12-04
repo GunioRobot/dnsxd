@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_op_query).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 
 %% API
 -export([handle/2]).

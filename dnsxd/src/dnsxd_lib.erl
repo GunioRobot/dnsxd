@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_lib).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 
 %% API
 -export([ensure_apps_started/1, new_id/0,

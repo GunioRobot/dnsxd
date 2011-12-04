@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_soc_tcp).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 -export([start_link/3, loop/3]).
 
 start_link(#dnsxd_if_spec{protocol = tcp} = IfSpec, Socket, ReqSupPid)

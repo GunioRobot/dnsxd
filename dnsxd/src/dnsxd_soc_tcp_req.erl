@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_soc_tcp_req).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 -export([start_link/1, init/1, loop/1]).
 
 -define(DEFAULT_TIMEOUT, 60).

@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_socs_sup).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 -behaviour(supervisor).
 
 %% API

@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_soc_udp).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 -export([start_link/2, init/3, loop/3]).
 
 start_link(#dnsxd_if_spec{protocol = udp} = IfSpec, ReqSupPid)

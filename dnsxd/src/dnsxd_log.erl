@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_log).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 
 %% API
 -export([log/1, log/2]).

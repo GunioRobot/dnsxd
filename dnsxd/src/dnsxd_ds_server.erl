@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_ds_server).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 -behaviour(gen_server).
 
 %% API

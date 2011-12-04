@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 -behaviour(application).
 
 % app callbacks

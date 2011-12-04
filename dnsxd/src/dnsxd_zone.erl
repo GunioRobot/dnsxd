@@ -18,7 +18,6 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_zone).
--include("dnsxd.hrl").
 
 -export([prepare/1]).
 
@@ -66,6 +65,7 @@ add_ds(ZoneName, TTL, [#dnsxd_dnssec_key{alg = Alg} = Key|Keys],
 			 expire = Expire},
     DSKeyDigest = crypto:sha([dns:encode_dname(ZoneName), DNSKeyDataBin]),
     KeyTag = DNSKeyData#dns_rrdata_dnskey.key_tag,
+-include("dnsxd_internal.hrl").
     DSKeyData = #dns_rrdata_ds{keytag = KeyTag,
 			       alg = Alg,
 			       digest_type = 1,

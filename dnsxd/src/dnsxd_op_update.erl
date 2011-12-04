@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_op_update).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 
 %% API
 -export([handle/2]).

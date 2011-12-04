@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_op_ctx).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 
 %% API
 -export([new_udp/5, new_tcp/3]).

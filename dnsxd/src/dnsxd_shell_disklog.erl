@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_shell_disklog).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 
 -export([main/4]).
 

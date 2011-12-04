@@ -18,7 +18,7 @@
 %%
 %% -------------------------------------------------------------------
 -module(dnsxd_disklog).
--include("dnsxd.hrl").
+-include("dnsxd_internal.hrl").
 
 -behaviour(gen_server).
 
