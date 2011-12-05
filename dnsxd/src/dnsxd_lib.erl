@@ -139,7 +139,18 @@ procket_open(IP, Port, Protocol, Type) ->
 	     end,
     Opts = [{progname, Progname}, {protocol, Protocol}, {type, Type},
 	    {family, Family}],
-    procket:open(Port, Opts).
+    case procket:open(Port, Opts) of
+	{ok, Fd} = Result ->
+	    Parent = self(),
+	    Fun = fun() ->
+			  process_flag(trap_exit, true),
+			  receive {'EXIT', Parent, _} -> ok end,
+			  ok = procket:close(Fd)
+		  end,
+	    spawn_link(Fun),
+	    Result;
+	Result -> Result
+    end.
 
 cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;
 cancel_timer(_) -> ok.
