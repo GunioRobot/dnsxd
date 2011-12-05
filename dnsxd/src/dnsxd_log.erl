@@ -47,16 +47,10 @@ prepare_props(Props0) when is_list(Props0) ->
     Logger:dnsxd_log(Props2).
 
 prepare_prop({K, IP}) when K =:= src_ip orelse K =:= dst_ip ->
-    prepare_prop({binary(K), format_ip(IP)});
+    prepare_prop({binary(K), dnsxd_lib:ip_to_txt(IP)});
 prepare_prop({K, V}) when is_atom(V) -> prepare_prop({K, binary(V)});
 prepare_prop({K, V}) when is_atom(K) -> prepare_prop({binary(K), V});
 prepare_prop({K, V} = Prop)
   when is_binary(K) andalso (is_integer(V) orelse is_binary(V)) -> Prop.
 
 binary(Atom) when is_atom(Atom) -> atom_to_binary(Atom, latin1).
-
-format_ip(Tuple) when is_tuple(Tuple) ->
-    case list_to_binary(inet_parse:ntoa(Tuple)) of
-	<<"::FFFF:", Bin/binary>> -> Bin;
-	Bin -> Bin
-    end.

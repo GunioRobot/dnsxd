@@ -24,7 +24,8 @@
 -export([ensure_apps_started/1, new_id/0,
 	 active_rr_fun/0, active_rr_fun/1, active_rr/2,
 	 to_dns_rr/1, to_dns_rr/2, is_dnssd_rr/2,
-	 use_procket/0, procket_open/4, cancel_timer/1]).
+	 use_procket/0, procket_open/4, cancel_timer/1,
+	 ip_to_txt/1]).
 
 %%%===================================================================
 %%% API
@@ -154,6 +155,13 @@ procket_open(IP, Port, Protocol, Type) ->
 
 cancel_timer(Ref) when is_reference(Ref) -> _ = erlang:cancel_timer(Ref), ok;
 cancel_timer(_) -> ok.
+
+ip_to_txt(IP)
+  when is_tuple(IP) andalso tuple_size(IP) =:= 4 orelse tuple_size(IP) =:= 8 ->
+    case list_to_binary(inet_parse:ntoa(IP)) of
+	<<"::FFFF:", Bin/binary>> -> Bin;
+	Bin -> Bin
+    end.
 
 %%%===================================================================
 %%% Internal functions
