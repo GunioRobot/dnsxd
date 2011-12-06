@@ -138,7 +138,11 @@ change(ZoneName, Changes) ->
 		{ok, _} -> ok;
 		{error, _Reason} = Error -> Error
 	    end;
-	{ok, #dnsxd_couch_zone{} = Zone} -> make_changes(Zone, Changes);
+	{ok, #dnsxd_couch_zone{} = Zone} ->
+	    case make_changes(Zone, Changes) of
+		#dnsxd_couch_zone{} = NewZone -> ?MODULE:put(DbRef, NewZone);
+		{error, _} = Result -> Result
+	    end;
 	{error, not_found} when Create ->
 	    Mname = <<"ns.", ZoneName/binary>>,
 	    Rname = <<"hostmaster.", ZoneName/binary>>,
