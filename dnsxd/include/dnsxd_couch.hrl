@@ -3,6 +3,10 @@
 
 -include("dnsxd.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -define(DNSXD_COUCH_DESIGNDOC, "app").
 -define(DNSXD_COUCH_TAG, <<"dnsxd_couch_rec">>).
 
