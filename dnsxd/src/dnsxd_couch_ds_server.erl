@@ -25,7 +25,8 @@
 -export([start_link/0]).
 
 -export([dnsxd_admin_zone_list/0, dnsxd_admin_get_zone/1,
-	 dnsxd_admin_change_zone/2, dnsxd_dns_update/6]).
+	 dnsxd_admin_change_zone/2, dnsxd_dns_update/6,
+	 dnsxd_reload_zones/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,

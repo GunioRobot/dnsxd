@@ -344,13 +344,26 @@ next_resend(Now, [#event{send_count = Count,
     end;
 next_resend(Now, [_|Events], Seconds) -> next_resend(Now, Events, Seconds).
 
-changes(ZoneName, Query, DNSSEC, LastAns) ->
-    Zone = dnsxd:get_zone(ZoneName),
-    {_RC, Ans, _Au, _Ad} = dnsxd_query:answer(Zone, Query, DNSSEC),
-    CurAns = [ RR#dns_rr{ttl = undefined} || RR <- Ans ],
+changes(ZoneName, #dns_query{name = QName, type = Type}, DNSSEC, LastAns) ->
+    Name = dns:dname_to_lower(QName),
+    ZoneRef = dnsxd_ds_server:get_zone(ZoneName),
+    CurAns = case dnsxd_ds_server:get_set(ZoneRef, Name, Type) of
+		 undefined -> [];
+		 #rrset{} = Set -> set_to_ans(QName, Set, DNSSEC)
+	     end,
     Added = [ RR#dns_rr{ttl = 1} || RR <- CurAns -- LastAns ],
     Removed =[ RR#dns_rr{ttl = -1} || RR <- LastAns -- CurAns ],
     {CurAns, Added ++ Removed}.
+
+set_to_ans(QName, #rrset{type = Type, data = Datas}, false) ->
+    [ #dns_rr{name = QName, type = Type, ttl = undefined, data = Data}
+      || Data <- Datas ];
+set_to_ans(QName, #rrset{sig = Sigs} = Set, true) ->
+    RR = set_to_ans(QName, Set, false),
+    lists:foldr(fun(Sig, Acc) ->
+			[#dns_rr{name = QName, type = ?DNS_TYPE_RRSIG,
+				 ttl = undefined, data = Sig}|Acc]
+		end, RR, Sigs).
 
 ack_event(EventId, #state{pending_events = Events} = State) ->
     case lists:keytake(EventId, #event.id, Events) of

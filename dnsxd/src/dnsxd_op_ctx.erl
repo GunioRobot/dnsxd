@@ -116,19 +116,77 @@ reply(MsgCtx, #dns_message{} = Msg, Props) ->
 %%%===================================================================
 
 reply_body(MsgCtx, Msg, Props) ->
+    Now = dns:unix_time(),
     RC = proplists:get_value(rc, Props, noerror),
     AA = proplists:get_bool(aa, Props),
-    An = proplists:get_value(an, Props, []),
+    DNSSEC = proplists:get_bool(dnssec, Props),
+    An = to_rr(Now, DNSSEC, proplists:get_value(an, Props, [])),
     AnLen = length(An),
-    Au = proplists:get_value(au, Props, []),
+    Au = to_rr(Now, DNSSEC, proplists:get_value(au, Props, [])),
     AuLen = length(Au),
-    Ad = proplists:get_value(ad, Props, []),
+    Ad = to_rr(Now, DNSSEC, proplists:get_value(ad, Props, [])),
     AdLen = length(Ad),
     RespMsg = Msg#dns_message{qr = true, rc = RC, aa = AA,
 			      anc = AnLen, answers = An,
 			      auc = AuLen, authority = Au,
 			      adc = AdLen, additional = Ad},
     to_wire(MsgCtx, RespMsg).
+
+to_rr(Now, DNSSEC, RRs) when is_list(RRs) ->
+    lists:foldr(fun(#dns_rr{} = RR, Acc) -> [RR|Acc];
+		   (#dnsxd_rr{name = Name,
+			      class = Class,
+			      type = Type,
+			      data = Data} = RR, Acc) ->
+			[#dns_rr{name = Name,
+				 class = Class,
+				 type = Type,
+				 ttl = ttl(Now, RR),
+				 data = Data}|Acc];
+		   (#rrset{} = Set, Acc) -> to_rr(Now, DNSSEC, Set, Acc);
+		   (Other, Acc) -> [Other|Acc]
+		end, [], RRs).
+
+to_rr(Now, false, #rrset{name = Name, class = Class, type = Type,
+			 data = Datas} = Set, Acc) ->
+    TTL = ttl(Now, Set),
+    lists:foldr(fun(Data, Acc0) ->
+			[#dns_rr{name = Name,
+				 class = Class,
+				 type = Type,
+				 ttl = TTL,
+				 data = Data}|Acc0]
+		end, Acc, Datas);
+to_rr(Now, true, #rrset{name = Name, class = Class, sig = Sigs} = Set, Acc) ->
+    TTL = ttl(Now, Set),
+    Acc1 = lists:foldr(fun(Sig, Acc0) ->
+			       [#dns_rr{name = Name,
+					class = Class,
+					type = ?DNS_TYPE_RRSIG,
+					ttl = TTL,
+					data = Sig}|Acc0]
+		       end, Acc, Sigs),
+    to_rr(Now, false, Set, Acc1).
+
+ttl(Now, #dnsxd_rr{incept = Incept,
+		   expire = Expire,
+		   ttl = TTL}) -> ttl(Now, Incept, Expire, TTL);
+ttl(Now, #rrset{incept = Incept, expire = Expire, ttl = TTL}) ->
+    ttl(Now, Incept, Expire, TTL).
+
+ttl(Now, Incept, Expire, NaturalTTL) ->
+    case is_integer(Expire) of
+	true ->
+	    MinTTL = 0,
+	    MaxTTL = 24 * 60 * 60, % config opts... or another way?
+	    TTL = lists:min([Expire - Incept, Expire - Now, NaturalTTL]),
+	    case TTL of
+		TTL when TTL < MinTTL -> MinTTL;
+		TTL when TTL > MaxTTL -> MaxTTL;
+		TTL -> TTL
+	    end;
+	false -> NaturalTTL
+    end.
 
 build_optrr(MsgCtx, #dns_optrr{}, Props) ->
     PayloadSize = dnsxd_op_ctx:max_size(MsgCtx),

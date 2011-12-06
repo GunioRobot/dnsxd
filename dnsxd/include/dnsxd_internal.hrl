@@ -7,4 +7,41 @@
 
 -include("dnsxd.hrl").
 
+-record(zone_ref, {name :: binary(), ref :: reference()}).
+-record(serial_ref, {zone_ref :: #zone_ref{}, serial :: pos_integer()}).
+-record(rrname_ref, {serial_ref :: #serial_ref{}, name :: binary()}).
+-record(rrset_ref, {rrname_ref :: #rrname_ref{}, type :: integer()}).
+
+-record(nsec3, {name :: binary(), hash :: binary(), hashdn :: binary()}).
+
+-record(rrmap, {serial_ref :: #serial_ref{},
+		names = [] :: [binary()],
+		tree = dict:new(),
+		sets = [] :: [{binary(),[integer()]}],
+		nsec3 = [] :: [#nsec3{}]}).
+-record(rrname, {ref :: #rrname_ref{},
+		 name :: binary(),
+		 cutby :: 'undefined' | binary(),
+		 types = [] :: [pos_integer()],
+		 coveredby :: binary()}).
+-record(rrset, {ref :: #rrset_ref{},
+		name :: binary(),
+		cutby :: 'undefined' | binary(),
+		class = ?DNS_CLASS_IN :: pos_integer(),
+		type :: pos_integer(),
+		incept :: pos_integer(),
+		expire :: pos_integer(),
+		ttl :: non_neg_integer(),
+		data = [] :: [tuple()],
+		sig = [] :: [tuple()]}).
+-record(tsig, {zone_ref :: #zone_ref{}, keys = [] :: [tuple()]}).
+-record(zone, {labels :: [binary()],
+	       name :: binary(),
+	       soa = undefined :: 'undefined' | tuple(),
+	       cuts = 0 :: non_neg_integer(),
+	       ref :: reference(),
+	       serials = [] :: [pos_integer()],
+	       axfr = false :: 'false' | [binary()],
+	       nsec3}).
+
 -endif.

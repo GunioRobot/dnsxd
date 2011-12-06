@@ -28,55 +28,52 @@
 %%%===================================================================
 
 handle(MsgCtx, #dns_message{
-	 questions=[#dns_query{name = ZoneNameM}]} = ReqMsg) ->
-    case dnsxd_op_ctx:protocol(MsgCtx) of
-	udp ->
-	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]);
-	tcp ->
-	    ZoneName = dns:dname_to_lower(ZoneNameM),
-	    case dnsxd:get_zone(ZoneName) of
-		undefined ->
-		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}]);
-		#dnsxd_zone{axfr_enabled = false} ->
-		    ?DNSXD_INFO("Refused AXFR of ~s to ~s",
-				[ZoneName, src_as_text(MsgCtx)]),
-		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}]);
-		#dnsxd_zone{axfr_hosts = Hosts, rr = RRs} ->
-		    case allow(MsgCtx, Hosts) of
-			true ->
-			    ?DNSXD_INFO("Allowed AXFR of ~s to ~s",
-					[ZoneName, src_as_text(MsgCtx)]),
-			    FilterFun = dnsxd_lib:active_rr_fun(),
-			    ActiveRRs = [ dnsxd_lib:to_dns_rr(RR)
-					  || RR <- RRs, FilterFun(RR) ],
-			    {value, SOA, RRBody} = lists:keytake(?DNS_TYPE_SOA,
-								 #dns_rr.type,
-								 ActiveRRs),
-			    Answers = [SOA|RRBody] ++ [SOA],
-			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{an, Answers}]);
-			false ->
-			    ?DNSXD_INFO("Refused AXFR of ~s to ~s",
-					[ZoneName, src_as_text(MsgCtx)]),
-			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}])
-		    end
-	    end
-    end.
+	 questions=[#dns_query{name = ZoneName}]} = ReqMsg) ->
+    ZoneRef = dnsxd_ds_server:get_zone(ZoneName),
+    Protocol = dnsxd_op_ctx:protocol(MsgCtx),
+    {SrcIPTuple, SrcPort} = dnsxd_op_ctx:src(MsgCtx),
+    SrcIP = dnsxd_lib:ip_to_txt(SrcIPTuple),
+    Refuse = if Protocol =:= udp -> true;
+		ZoneRef =:= undefined -> true;
+		true -> not allow(ZoneRef, SrcIP) end,
+    MsgArgs = [ZoneName, SrcIP, SrcPort],
+    Props = case Refuse of
+		true ->
+		    ?DNSXD_INFO("Refusing AXFR of ~s to ~s:~p", MsgArgs),
+		    [{rc, formerr}];
+		false ->
+		    ?DNSXD_INFO("Allowing AXFR of ~s to ~s:~p", MsgArgs),
+		    Sets = dnsxd_ds_server:get_set_list(ZoneRef),
+		    [{an, collect_sets(ZoneRef, Sets)}, {dnssec, true}]
+	    end,
+    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props).
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
 
-allow(_MsgCtx, []) -> true;
-allow(MsgCtx, Hosts) when is_list(Hosts) ->
-    SrcIP = srcip_as_text(MsgCtx),
-    lists:member(SrcIP, Hosts).
+allow(Zone, SrcIP) ->
+    case dnsxd_ds_server:axfr_hosts(Zone) of
+	Bool when is_boolean(Bool) -> Bool;
+	Hosts when is_list(Hosts) -> lists:member(SrcIP, Hosts)
+    end.
 
-srcip_as_text(MsgCtx) ->
-    SrcIP = dnsxd_op_ctx:src_ip(MsgCtx),
-    list_to_binary(inet_parse:ntoa(SrcIP)).
+collect_sets(ZoneRef, Sets) -> collect_sets(ZoneRef, Sets, []).
 
-src_as_text(MsgCtx) ->
-    {SrcIPTuple, SrcPortInt} = dnsxd_op_ctx:src(MsgCtx),
-    SrcIPList = inet_parse:ntoa(SrcIPTuple),
-    SrcPortList = integer_to_list(SrcPortInt),
-    iolist_to_binary([SrcIPList, $:, SrcPortList]).
+collect_sets(ZoneRef, [{Name, Types}|Sets], RR) ->
+    RR0 = collect_sets(ZoneRef, Name, Types, RR),
+    collect_sets(ZoneRef, Sets, RR0);
+collect_sets(ZoneRef, [], RR) ->
+    Name = dnsxd_ds_server:zonename_from_ref(ZoneRef),
+    Set = dnsxd_ds_server:get_set(ZoneRef, Name, ?DNS_TYPE_SOA),
+    SetNoSig = Set#rrset{sig = []},
+    [Set|lists:reverse([SetNoSig|RR])].
+
+collect_sets(ZoneRef, Name, [?DNS_TYPE_DS|Types], RR) ->
+    collect_sets(ZoneRef, Name, Types, RR);
+collect_sets(ZoneRef, Name, [?DNS_TYPE_SOA|Types], RR) ->
+    collect_sets(ZoneRef, Name, Types, RR);
+collect_sets(ZoneRef, Name, [Type|Types], RR) ->
+    Set = dnsxd_ds_server:get_set(ZoneRef, Name, Type),
+    collect_sets(ZoneRef, Name, Types, [Set|RR]);
+collect_sets(_ZoneRef, _Name, [], RR) -> RR.

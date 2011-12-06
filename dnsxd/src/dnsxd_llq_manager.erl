@@ -33,8 +33,9 @@
 
 -define(TAB_LLQ, dnsxd_ds_llq).
 
--record(state, {sup_pid, llq_count = 0}).
+-record(state, {sup_pid, serialchange_tab, llq_count = 0}).
 -record(llq_ref, {id, pid, monitor_ref, zonename, q}).
+-record(serialchange, {zonename, ref, next_serial}).
 
 %%%===================================================================
 %%% API
@@ -67,8 +68,8 @@ list_llq(ZoneName) when is_binary(ZoneName) ->
 
 zone_changed(ZoneName) ->
     MS = {#llq_ref{zonename = ZoneName, pid = '$1', _ = '_'}, [], ['$1']},
-    [ gen_server:cast(Pid, {zone_changed, ZoneName})
-      || Pid <- ets:select(?TAB_LLQ, [MS]) ],
+    Pids = [?SERVER|ets:select(?TAB_LLQ, [MS])],
+    [ gen_server:cast(Pid, {zone_changed, ZoneName}) || Pid <- Pids ],
     ok.
 
 %%%===================================================================
@@ -77,13 +78,16 @@ zone_changed(ZoneName) ->
 
 init(SupPid) when is_pid(SupPid) ->
     ?TAB_LLQ = ets:new(?TAB_LLQ, [named_table, {keypos, #llq_ref.id}]),
-    {ok, #state{sup_pid = SupPid}}.
+    SerialChangeTab = ets:new(?MODULE, [{keypos, #serialchange.zonename}]),
+    {ok, #state{sup_pid = SupPid, serialchange_tab = SerialChangeTab}}.
 
 handle_call({new_llq, ClientPid, MsgCtx,
 	     #dns_message{questions = [#dns_query{} = Q],
 			  additional = [#dns_optrr{dnssec = ClientDNSSEC}|_]
 			 } = Msg}, _From,
-	    #state{sup_pid = SupPid, llq_count = Count} = State) ->
+	    #state{sup_pid = SupPid,
+		   serialchange_tab = SerialChangeTab,
+		   llq_count = Count} = State) ->
     case servfull(State) of
 	true -> {reply, {ok, servfull}, State};
 	false ->
@@ -96,6 +100,7 @@ handle_call({new_llq, ClientPid, MsgCtx,
 				      zonename = ZoneName,
 				      q = Q},
 		    true = ets:insert(?TAB_LLQ, LLQRef),
+		    ok = update_serial_tracking(SerialChangeTab, ZoneName),
 		    ok = dnsxd_llq_server:handle_msg(LLQPid, MsgCtx, Msg),
 		    NewState = State#state{llq_count = Count + 1},
 		    {reply, ok, NewState};
@@ -106,10 +111,16 @@ handle_call(Request, _From, State) ->
     ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
+handle_cast({zone_changed, ZoneName}, #state{serialchange_tab = Tab} = State) ->
+    ok = update_serial_tracking(Tab, ZoneName),
+    {noreply, State};
 handle_cast(Msg, State) ->
     ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
+handle_info({new_serial, ZoneName}, State) ->
+    ok = zone_changed(ZoneName),
+    {noreply, State};
 handle_info({'DOWN', _Ref, process, Pid, _Reason},
 	    #state{llq_count = LLQCount} = State) ->
     MatchSpec = {#llq_ref{id = '$1', pid = Pid, _ = '_'}, [], ['$1']},
@@ -140,10 +151,18 @@ servfull(#state{llq_count = Count}) ->
 start_new_llq(SupPid, #dns_query{name = NameM} = Q, ClientPid, MsgCtx,
 	      ClientDNSSEC) ->
     Name = dns:dname_to_lower(NameM),
-    case dnsxd_ds_server:find_zone(Name) of
-	#dnsxd_zone{name = ZoneName, dnssec_enabled = DNSSECEnabled} ->
+    ZoneRef = dnsxd_ds_server:zone_ref_for_name(Name),
+    Refuse = case ZoneRef of
+		 undefined -> true;
+		 ZoneRef -> dnsxd_ds_server:is_cut(ZoneRef, Name)
+	     end,
+    case Refuse of
+	true -> bad_zone;
+	false ->
 	    Id = new_id(),
-	    DoDNSSEC = ClientDNSSEC andalso DNSSECEnabled,
+	    ZoneName = dnsxd_ds_server:zonename_from_ref(ZoneRef),
+	    ZoneDNSSEC = dnsxd_ds_server:is_dnssec_zone(ZoneRef),
+	    DoDNSSEC = ClientDNSSEC andalso ZoneDNSSEC,
 	    Spec = {Id, {dnsxd_llq_server, start_link,
 			 [ClientPid, Id, ZoneName, MsgCtx, Q, DoDNSSEC]},
 		    temporary, 2000, worker, [dnsxd_llq_server]},
@@ -160,3 +179,37 @@ new_id() ->
 	true -> new_id();
 	false -> Id
     end.
+
+update_serial_tracking(Tab, ZoneName) ->
+    ok = remove_serial_tracking(Tab, ZoneName),
+    case zone_has_clients(ZoneName) of
+	true -> ok = add_serial_tracking(Tab, ZoneName);
+	false -> ok
+    end.
+
+remove_serial_tracking(Tab, ZoneName) ->
+    case ets:lookup(Tab, ZoneName) of
+	[] -> ok;
+	[#serialchange{zonename = ZoneName, ref = Ref}] ->
+	    ok = dnsxd_lib:cancel_timer(Ref),
+	    ets:delete(Tab, ZoneName),
+	    ok
+    end.
+
+add_serial_tracking(Tab, ZoneName) ->
+    Now = dns:unix_time(),
+    case dnsxd_ds_server:next_serial(ZoneName) of
+	Serial when Serial > Now ->
+	    Msg = {new_serial, ZoneName},
+	    Ref = timer:send_after((Serial - Now) * 1000, ?SERVER, Msg),
+	    Entry = #serialchange{zonename = ZoneName,
+				  ref = Ref,
+				  next_serial = Serial},
+	    ets:insert(Tab, Entry),
+	    ok;
+	_ -> ok
+    end.
+
+zone_has_clients(ZoneName) ->
+    MS = {#llq_ref{zonename = ZoneName, _ = '_'}, [], [{{true}}]},
+    '$end_of_table' =/= ets:select(?TAB_LLQ, [MS], 1).

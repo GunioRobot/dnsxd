@@ -807,9 +807,9 @@ decode(dnsxd_couch_zone, rev, List) -> get_value(<<"_rev">>, List);
 decode(Tag, Field, List) ->
     Default = get_default(Tag, Field),
     case get_value(atom_to_binary(Field, latin1), List, Default) of
-	{MebePL} when is_list(MebePL) ->
+	{MebePL} = Struct when is_list(MebePL) ->
 	    case get_value(?DNSXD_COUCH_TAG, MebePL) of
-		undefined -> {MebePL};
+		undefined -> Struct;
 		_ -> decode(MebePL)
 	    end;
 	[{MebePL}|_] = MebePLs when is_list(MebePL) ->

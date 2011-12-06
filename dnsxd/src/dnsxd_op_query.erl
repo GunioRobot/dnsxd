@@ -28,18 +28,207 @@
 %%%===================================================================
 
 handle(MsgCtx, #dns_message{qc = 1,
-			    questions = [#dns_query{name = QName} = Q]
+			    questions = [#dns_query{name = QName,
+						    class = ?DNS_CLASS_IN,
+						    type = Type}]
 			   } = ReqMsg) ->
-    case dnsxd:find_zone(QName) of
-	#dnsxd_zone{dnssec_enabled = ZoneDNSSEC} = Zone ->
-	    ClientDNSSEC = do_dnssec(ReqMsg),
-	    DNSSEC = ClientDNSSEC andalso ZoneDNSSEC,
-	    {RC, An, Au, Ad} = dnsxd_query:answer(Zone, Q, DNSSEC),
-	    Props = [{rc, RC}, {dnssec, DNSSEC}, aa,
-		     {an, An}, {au, Au}, {ad, Ad}],
-	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props);
-	_ -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}])
+    Name = dns:dname_to_lower(QName),
+    Props0 = case dnsxd_ds_server:zone_ref_for_name(Name) of
+		 undefined -> [{rc, refused}];
+		 Ref ->
+		     DNSSEC = do_dnssec(ReqMsg, Ref),
+		     Props = [{ad, []}, {an, []}, {au, []}, {dnssec, DNSSEC},
+			      {rc, nxdomain}],
+		     answer(QName, Name, Type, Ref, Props)
+	     end,
+    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props0);
+handle(MsgCtx, #dns_message{} = ReqMsg) ->
+    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}]).
+
+do_dnssec(#dns_message{additional=[#dns_optrr{dnssec = DNSSEC}|_]}, Ref) ->
+    DNSSEC andalso dnsxd_ds_server:is_dnssec_zone(Ref);
+do_dnssec(#dns_message{}, _Ref) -> false.
+
+answer(QName, Name, ?DNS_TYPE_ANY, Ref, Props) ->
+    DNSSEC = orddict:fetch(dnssec, Props),
+    case dnsxd_ds_server:lookup_rrname(Ref, Name) of
+	{found, Name} ->
+	    Props0 = orddict:store(rc, noerror, Props),
+	    case dnsxd_ds_server:lookup_sets(Ref, QName, Name) of
+		{match, Sets} ->
+		    Props1 = orddict:append_list(an, Sets, Props0),
+		    authority(Ref, Props1);
+		{cut, CutSet, Sets} ->
+		    Props1 = orddict:append(au, CutSet, Props0),
+		    orddict:append_list(ad, Sets, Props1)
+	    end;
+	{found_wild, _LastName, PlainName, WildName} ->
+	    Props0 = orddict:store(rc, noerror, Props),
+	    Props1 = append_nsec3_cover(Ref, PlainName, Props0, DNSSEC),
+	    case dnsxd_ds_server:lookup_sets(Ref, QName, WildName) of
+		{match, Sets} ->
+		    Props2 = orddict:append_list(an, Sets, Props1),
+		    authority(Ref, Props2);
+		{cut, CutSet, Sets} ->
+		    Props2 = orddict:append_list(au, CutSet, Props1),
+		    Props3 = orddict:append_list(ad, Sets, Props2),
+		    orddict:append_list(ad, Sets, Props3)
+	    end;
+	{no_name, LastName, PlainName, WildName} ->
+	    case dnsxd_ds_server:get_cutters_set(Ref, LastName) of
+		undefined ->
+		    Cover = [LastName, PlainName, WildName],
+		    Props0 = append_nsec3_cover(Ref, Cover, Props, DNSSEC),
+		    authority(Ref, Props0);
+		CutRR ->
+		    Props0 = orddict:append(au, CutRR, Props),
+		    Cover = case parent(LastName) of
+				undefined -> [LastName];
+				ParentName -> [ParentName, LastName]
+			    end,
+		    Props1 = append_nsec3_cover(Ref, Cover, Props0, DNSSEC),
+		    authority(Ref, Props1)
+	    end
+    end;
+answer(QName, Name, Type, Ref, Props) ->
+    DNSSEC = orddict:fetch(dnssec, Props),
+    case dnsxd_ds_server:lookup_rrname(Ref, Name) of
+	{found, Name} ->
+	    Props0 = orddict:store(rc, noerror, Props),
+	    case dnsxd_ds_server:lookup_set(Ref, QName, Name, Type) of
+		nodata ->
+		    Props1 = append_nsec3_cover(Ref, Name, Props0, DNSSEC),
+		    authority(Ref, Props1);
+		{match, RR} ->
+		    Props1 = orddict:append(an, RR, Props0),
+		    authority(Ref, Props1);
+		{match, NewQName, RR} ->
+		    Props1 = orddict:append(an, RR, Props0),
+		    case follow_cname(Ref, Props1, NewQName) of
+			true -> answer(NewQName, NewQName, Type, Ref, Props1);
+			false -> authority(Ref, Props1)
+		    end;
+		{referral, CutRR, AdRR} ->
+		    Props1 = case CutRR of
+				 undefined -> Props0;
+				 CutRR -> orddict:append(au, CutRR, Props0)
+			     end,
+		    Props2 = add_ds(Ref, CutRR, Props1, DNSSEC),
+		    Props3 = case AdRR of
+				 undefined -> Props2;
+				 AdRR -> orddict:append(ad, AdRR, Props2)
+			     end,
+		    additional(Ref, Props3)
+	    end;
+	{found_wild, LastName, PlainName, WildName} ->
+	    Props0 = orddict:store(rc, noerror, Props),
+	    Props1 = append_nsec3_cover(Ref, PlainName, Props0, DNSSEC),
+	    case dnsxd_ds_server:lookup_set(Ref, QName, WildName, Type) of
+		nodata ->
+		    Cover = [WildName, LastName],
+		    Props2 = append_nsec3_cover(Ref, Cover, Props1, DNSSEC),
+		    authority(Ref, Props2);
+		{match, RR} ->
+		    Props2 = orddict:append(an, RR, Props1),
+		    authority(Ref, Props2);
+		{match, NewQName, RR} ->
+		    Props2 = orddict:append_list(an, RR, Props1),
+		    case follow_cname(Ref, Props2, NewQName) of
+			true -> answer(NewQName, NewQName, Type, Ref, Props2);
+			false -> authority(Ref, Props2)
+		    end;
+		{referral, CutRR, AdRR} ->
+		    Props2 = orddict:append_list(au, CutRR, Props1),
+		    Props3 = add_ds(Ref, CutRR, Props2, DNSSEC),
+		    Props4 = case AdRR of
+				 undefined -> Props3;
+				 AdRR -> orddict:append(ad, AdRR, Props3)
+			     end,
+		    additional(Ref, Props4)
+	    end;
+	{no_name, LastName, PlainName, WildName} ->
+	    case dnsxd_ds_server:get_cutters_set(Ref, LastName) of
+		undefined ->
+		    Cover = [LastName, PlainName, WildName],
+		    Props0 = append_nsec3_cover(Ref, Cover, Props, DNSSEC),
+		    authority(Ref, Props0);
+		CutRR ->
+		    Props0 = orddict:append(au, CutRR, Props),
+		    Cover = case parent(LastName) of
+				undefined -> [LastName];
+				ParentName -> [ParentName, LastName]
+			    end,
+		    Props1 = append_nsec3_cover(Ref, Cover, Props0, DNSSEC),
+		    authority(Ref, Props1)
+	    end
     end.
 
-do_dnssec(#dns_message{additional=[#dns_optrr{dnssec = DNSSEC}|_]}) -> DNSSEC;
-do_dnssec(#dns_message{}) -> false.
+authority(ref = Ref, Props) ->
+    Name = dnsxd_ds_server:zonename_from_ref(Ref),
+    An = orddict:fetch(an, Props),
+    Type = case orddict:fetch(rc, Props) =:= nxdomain of
+	       true -> ?DNS_TYPE_SOA;
+	       false -> ?DNS_TYPE_NS
+	   end,
+    {match, RRSet} = dnsxd_ds_server:lookup_set(Ref, Name, Name, Type),
+    case lists:member(RRSet, An) of
+	true -> additional(Ref, Props);
+	false ->
+	    Au = orddict:fetch(au, Props),
+	    NewAu = [RRSet|Au],
+	    Props0 = orddict:store(au, NewAu, Props),
+	    additional(Ref, Props0)
+    end;
+authority(_, Props) -> Props.
+
+additional(_Ref, Props) -> Props.
+
+append_nsec3_cover(_Ref, _Names, Props, false) -> Props;
+append_nsec3_cover(Ref, Name, Props, true) when is_binary(Name) ->
+    append_nsec3_cover(Ref, [Name], Props, []);
+append_nsec3_cover(Ref, Names, Props, true) when is_list(Names) ->
+    append_nsec3_cover(Ref, Names, Props, []);
+append_nsec3_cover(Ref, [Name|Names], Props, Collected) ->
+    Cover = dnsxd_ds_server:get_nsec3_cover(Ref, Name),
+    case lists:member(Cover, Collected) of
+	true -> append_nsec3_cover(Ref, Names, Props, Collected);
+	false ->
+	    Collected0 = [Cover|Collected],
+	    append_nsec3_cover(Ref, Names, Props, Collected0)
+    end;
+append_nsec3_cover(_Ref, [], Props, Collected) ->
+    orddict:append_list(au, Collected, Props).
+
+follow_cname(Ref, Results, NameM) ->
+    An = orddict:fetch(an, Results),
+    case lists:keymember(NameM, #rrset.name, An) of
+	true -> false;
+	false ->
+	    Name = dns:dname_to_lower(NameM),
+	    case dnsxd_ds_server:zonename_from_ref(Ref) of
+		NameM -> true;
+		ZoneName ->
+		    NameSize = byte_size(Name),
+		    ZoneNameSize = byte_size(Name),
+		    if (ZoneNameSize + 1) >= NameSize -> false;
+		       true ->
+			    Pre = NameSize - ZoneNameSize - 1,
+			    case Name of
+				<<_:Pre/binary, $., ZoneName/binary>> -> true;
+				_ -> false
+			    end
+		    end
+	    end
+    end.
+
+parent(<<$., Name/binary>>) -> Name;
+parent(<<"\\.", Name/binary>>) -> parent(Name);
+parent(<<_, Name/binary>>) -> parent(Name);
+parent(<<>>) -> undefined.
+
+add_ds(Ref, #rrset{name = Name, type = ?DNS_TYPE_NS} = NSSet, Props, true) ->
+    case dnsxd_ds_server:lookup_set(Ref, Name, Name, ?DNS_TYPE_DS) of
+	{referral, NSSet, DSSet} -> orddict:append(au, DSSet, Props);
+	_ -> Props
+    end;
+add_ds(_Ref, _RR, Props, _DNSSEC) -> Props.

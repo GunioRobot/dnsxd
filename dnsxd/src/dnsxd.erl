@@ -37,7 +37,7 @@
 -export([load_zone/1, reload_zone/1, delete_zone/1, zone_loaded/1]).
 
 %% querying
--export([find_zone/1, get_zone/1, get_key/1]).
+-export([get_zone/1, get_key/1]).
 
 %% llq
 -export([new_llq/3, msg_llq/2]).
@@ -125,8 +125,6 @@ log_opts() ->
     end.
 
 zone_loaded(ZoneName) -> dnsxd_ds_server:zone_loaded(ZoneName).
-
-find_zone(Name) -> dnsxd_ds_server:find_zone(Name).
 
 get_zone(ZoneName) -> dnsxd_ds_server:get_zone(ZoneName).
 
