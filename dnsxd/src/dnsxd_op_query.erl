@@ -37,8 +37,8 @@ handle(MsgCtx, #dns_message{qc = 1,
 		 undefined -> [{rc, refused}];
 		 Ref ->
 		     DNSSEC = do_dnssec(ReqMsg, Ref),
-		     Props = [{ad, []}, {an, []}, {au, []}, {dnssec, DNSSEC},
-			      {rc, nxdomain}],
+		     Props = [{aa, true}, {ad, []}, {an, []}, {au, []},
+			      {dnssec, DNSSEC}, {rc, nxdomain}],
 		     answer(QName, Name, Type, Ref, Props)
 	     end,
     dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props0);
