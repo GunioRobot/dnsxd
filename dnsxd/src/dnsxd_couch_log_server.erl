@@ -257,10 +257,26 @@ setup_flush_callback(#state{flush_ref = OldRef} = State) ->
     State#state{flush_ref = NewRef}.
 
 flush_to_couch() ->
-    {ok, DbRef} = dnsxd_couch_lib:get_db(),
     ?TAB_DUMP = ets:rename(?TAB_LIVE, ?TAB_DUMP),
     ok = create_live_ets_table(),
-    flush_to_couch(DbRef).
+    case flush_to_couch_getdb(5) of
+	{ok, DbRef} -> flush_to_couch(DbRef);
+	undefined ->
+	    ?DNSXD_ERR("Failed to save ~p log entries",
+		       [ets:info(?TAB_DUMP, size)]),
+	    true = ets:delete(?TAB_DUMP),
+	    ok
+    end.
+
+flush_to_couch_getdb(0) -> undefined;
+flush_to_couch_getdb(Retries) ->
+    case dnsxd_couch_lib:get_db() of
+	{ok, _DbRef} = Result -> Result;
+	{error, Reason} ->
+	    ?DNSXD_ERR("Failed to get database:~n~p", [Reason]),
+	    timer:sleep(500),
+	    flush_to_couch_getdb(Retries - 1)
+    end.
 
 flush_to_couch(DbRef) ->
     case ets:first(?TAB_DUMP) of
@@ -298,18 +314,20 @@ flush_to_couch(DbRef, DocNo, Entries, Retries) ->
 		{ok, _} -> ok;
 		{error, Reason} ->
 		    ?DNSXD_ERR("Failed to write ~s:~n~p", [DocName, Reason]),
-		    timer:sleep(10),
+		    timer:sleep(500),
 		    flush_to_couch(DbRef, DocNo, Entries, Retries - 1)
 	    end;
 	{error, Reason} ->
 	    ?DNSXD_ERR("Failed to open ~s:~n~p", [DocName, Reason]),
-	    timer:sleep(10),
+	    timer:sleep(500),
 	    flush_to_couch(DbRef, DocNo, Entries, Retries - 1)
     end.
 
 get_log(DocName) ->
-    {ok, DbRef} = dnsxd_couch_lib:get_db(),
-    get_log(DbRef, DocName).
+    case dnsxd_couch_lib:get_db() of
+	{ok, DbRef} -> get_log(DbRef, DocName);
+	{error, _Reason} = Error -> Error
+    end.
 
 get_log(DbRef, DocName) ->
     BaseProps = [{<<"_id">>, DocName}, {?DNSXD_COUCH_TAG, ?DOC_TYPE_LOG}],

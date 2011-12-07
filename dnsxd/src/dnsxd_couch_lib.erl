@@ -57,17 +57,22 @@ get_conflicts({DocProps}) -> get_conflicts(DocProps);
 get_conflicts(DocProps) -> proplists:get_value(<<"_conflicts">>, DocProps, []).
 
 setup_monitor(Filter) ->
-    {ok, DbRef} = dnsxd_couch_lib:get_db(),
-    case couchbeam:db_info(DbRef) of
-	{ok, {DbInfo}} ->
-	    Since = proplists:get_value(<<"update_seq">>, DbInfo),
-	    setup_monitor(DbRef, Filter, Since);
+    case dnsxd_couch_lib:get_db() of
+	{ok, DbRef} ->
+	    case couchbeam:db_info(DbRef) of
+		{ok, {DbInfo}} ->
+		    Since = proplists:get_value(<<"update_seq">>, DbInfo),
+		    setup_monitor(DbRef, Filter, Since);
+		{error, _Reason} = Error -> Error
+	    end;
 	{error, _Reason} = Error -> Error
     end.
 
 setup_monitor(Filter, Since) ->
-    {ok, DbRef} = dnsxd_couch_lib:get_db(),
-    setup_monitor(DbRef, Filter, Since).
+    case dnsxd_couch_lib:get_db() of
+	{ok, DbRef} -> setup_monitor(DbRef, Filter, Since);
+	{error, _Reason} = Error -> Error
+    end.
 
 setup_monitor(DbRef, Filter, Since) ->
     Opts = [{since, Since}, continuous, heartbeat, {filter, Filter}],

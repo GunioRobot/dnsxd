@@ -35,7 +35,7 @@
 
 -define(CHANGES_FILTER, <<?DNSXD_COUCH_DESIGNDOC "/dnsxd_couch_zone">>).
 
--record(state, {db_ref, db_seq, db_lost = false}).
+-record(state, {db_ref, db_seq, db_lost = false, reload = []}).
 
 %%%===================================================================
 %%% API
@@ -54,15 +54,18 @@ dnsxd_dns_update(MsgCtx, Key, ZoneName, ?DNS_CLASS_IN, PreReqs, Updates) ->
 dnsxd_dns_update(_, _, _, _, _, _) -> refused.
 
 dnsxd_admin_zone_list() ->
-    {ok, DbRef} = dnsxd_couch_lib:get_db(),
-    ViewName = {?DNSXD_COUCH_DESIGNDOC, "dnsxd_couch_zone"},
-    Fun = fun({Props}, Acc) ->
-		  ZoneName = get_value(<<"id">>, Props),
-		  Enabled = get_value(<<"key">>, Props),
-		  [{ZoneName, Enabled}|Acc]
-	  end,
-    case couchbeam_view:fold(Fun, [], DbRef, ViewName) of
-	Zones when is_list(Zones) -> {ok, Zones};
+    case dnsxd_couch_lib:get_db() of
+	{ok, DbRef} ->
+	    ViewName = {?DNSXD_COUCH_DESIGNDOC, "dnsxd_couch_zone"},
+	    Fun = fun({Props}, Acc) ->
+			  ZoneName = get_value(<<"id">>, Props),
+			  Enabled = get_value(<<"key">>, Props),
+			  [{ZoneName, Enabled}|Acc]
+		  end,
+	    case couchbeam_view:fold(Fun, [], DbRef, ViewName) of
+		Zones when is_list(Zones) -> {ok, Zones};
+		{error, _Reason} = Error -> Error
+	    end;
 	{error, _Reason} = Error -> Error
     end.
 
@@ -76,6 +79,33 @@ dnsxd_admin_get_zone(ZoneName) ->
 
 dnsxd_admin_change_zone(ZoneName, [_|_] = Changes) when is_binary(ZoneName) ->
     dnsxd_couch_zone:change(ZoneName, Changes).
+
+dnsxd_reload_zones(ZoneNames) ->
+    FailFun = fun(ZoneName, Reason) ->
+		      Fmt = "Failed to reload ~s after DB failure:~n~p",
+		      ?DNSXD_ERR(Fmt, [ZoneName, Reason]),
+		      ok = dnsxd:delete_zone(ZoneName),
+		      gen_server:cast(?SERVER, {reload, ZoneName})
+	      end,
+    case dnsxd_couch_lib:get_db() of
+	{ok, DbRef} ->
+	    Fun = fun(ZoneName) ->
+			  case dnsxd_couch_zone:get(DbRef, ZoneName) of
+			      {ok, #dnsxd_couch_zone{enabled = true} = Zone} ->
+				  ok = insert_zone(Zone);
+			      {ok, #dnsxd_couch_zone{enabled = false}} ->
+				  ok = dnsxd:delete_zone(ZoneName);
+			      {error, Reason} when Reason =:= deleted orelse
+						   Reason =:= not_zone ->
+				  ok = dnsxd:delete_zone(ZoneName);
+			      {error, Reason} -> FailFun(ZoneName, Reason)
+			  end
+		  end,
+	    lists:foreach(Fun, ZoneNames);
+	{error, Reason} ->
+	    [ FailFun(ZoneName, Reason) || ZoneName <- ZoneNames ]
+    end,
+    ok.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -91,17 +121,30 @@ handle_call(Request, _From, State) ->
     ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
+handle_cast({reload, ZoneName}, #state{db_lost = false} = State) ->
+    ok = spawn_zone_reloader(ZoneName),
+    {noreply, State};
+handle_cast({reload, ZoneName}, #state{reload = List} = State) ->
+    List0 = case lists:member(ZoneName, List) of
+		true -> List;
+		false -> [ZoneName|List]
+	    end,
+    NewState = State#state{reload = List0},
+    {noreply, NewState};
 handle_cast(Msg, State) ->
     ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
-handle_info({Ref, done} = Message,
-	    #state{db_ref = Ref, db_seq = Seq, db_lost = Lost} = State) ->
+handle_info({Ref, done} = Message, #state{db_ref = Ref, db_seq = Seq,
+					  db_lost = Lost, reload = ReloadList
+					 } = State) ->
     case dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER, Seq) of
 	{ok, NewRef, Seq} ->
 	    if Lost -> ?DNSXD_INFO("Reconnected db poll");
 	       true -> ok end,
-	    {noreply, State#state{db_ref = NewRef, db_lost = false}};
+	    ok = spawn_zone_reloader(ReloadList),
+	    State0 = State#state{db_ref = NewRef, db_lost = false, reload = []},
+	    {noreply, State0};
 	{error, Error} ->
 	    ?DNSXD_ERR("Unable to reconnect db poll:~n"
 		       "~p~n"
@@ -288,3 +331,10 @@ to_dnsxd_rr(#dnsxd_couch_rr{incept = Incept,
 	      data = Data}.
 
 get_value(Key, List) -> {Key, Value} = lists:keyfind(Key, 1, List), Value.
+
+spawn_zone_reloader(ZoneName) when is_binary(ZoneName) ->
+    spawn_zone_reloader([ZoneName]);
+spawn_zone_reloader([_|_] = ZoneNames) ->
+    spawn_link(fun() -> ?MODULE:dnsxd_reload_zones(ZoneNames) end),
+    ok;
+spawn_zone_reloader([]) -> ok.
