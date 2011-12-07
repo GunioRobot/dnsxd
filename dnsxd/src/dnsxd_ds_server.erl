@@ -407,8 +407,11 @@ clean_zone(ZoneRef, [Serial|Serials]) ->
     clean_zone(ZoneRef, Serials);
 clean_zone(_ZoneRef, []) -> ok.
 
-insert_zone(#dnsxd_zone{name = ZoneName, soa_param = SOA, nsec3 = NSEC3} = Zone)
+insert_zone(#dnsxd_zone{name = ZoneName, soa_param = SOA, nsec3 = NSEC3Rec,
+			dnssec_enabled = DNSSEC} = Zone)
   when is_binary(ZoneName) ->
+    NSEC3 = if DNSSEC -> NSEC3Rec;
+	       true -> undefined end,
     ets:delete(?TAB_RELOAD, ZoneName),
     FailedPreviously = ets:member(?TAB_BADZONE, ZoneName),
     TempTab = ets:new(dnsxd_tmp_lz, [public, duplicate_bag]),
