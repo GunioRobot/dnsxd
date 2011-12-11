@@ -421,10 +421,12 @@ insert_zone(#dnsxd_zone{name = ZoneName, soa_param = SOA, nsec3 = NSEC3Rec,
 	    if FailedPreviously -> ets:delete(?TAB_BADZONE, ZoneName);
 	       true -> ok end,
 	    ok = insert_from_temp_tab(TempTab),
+	    true = ets:delete(TempTab),
 	    ok = add_to_zone_tab(ZoneName, Ref, Serials, AXFR, SOA, NSEC3),
 	    ok = add_reload_entry(ZoneName, Serials),
 	    ok = dnsxd_llq_manager:zone_changed(ZoneName);
 	{error, Reason} ->
+	    true = ets:delete(TempTab),
 	    if FailedPreviously ->
 		    Attempts = ets:lookup_element(?TAB_BADZONE, ZoneName,
 						  #badzone.attempts),
