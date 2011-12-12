@@ -2,6 +2,10 @@
 
 **License: Apache 2**
 
+**Status: Alpha**
+
+### Overview
+
 dnsxd is an Erlang DNS server with a focus on DNS Service Discovery.
 It supports:
 
@@ -9,7 +13,7 @@ It supports:
 * [DNS Update Leases](http://files.dns-sd.org/draft-sekar-dns-ul.txt)
 * [DNS Long Lived Queries](http://files.dns-sd.org/draft-sekar-dns-llq.txt)
 * Transaction Signatures (TSIGs)
-* DNSSEC - NSEC3 white-lies with RSA SHA1 signatures
+* DNSSEC - NSEC3 with RSA SHA1 signatures
 
 dnsxd's default datastore module is an interface to CouchDB. Alternative
 modules can be selected via a configuration option.
