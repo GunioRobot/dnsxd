@@ -332,8 +332,8 @@ handle_cast(Msg, State) ->
     ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
-handle_info({clean_zone, ZoneName, Ref, Serials}, State) ->
-    ok = clean_zone(ZoneName, Ref, Serials),
+handle_info({clean_zone, #zone_ref{} = ZoneRef, Serials}, State) ->
+    ok = clean_zone(ZoneRef, Serials),
     {noreply, State};
 handle_info(reload_zones, #state{reload_pid = undefined} = State) ->
     Now = dns:unix_time(),
@@ -375,8 +375,11 @@ set_reload_timer(#state{reload_ref = Ref} = State) ->
 
 do_delete_zone(ZoneName) ->
     ZoneNameLabels = dns:dname_to_labels(ZoneName),
+    ets:delete(?TAB_RELOAD, ZoneName),
     case ets:lookup(?TAB_ZONE, ZoneNameLabels) of
 	[#zone{ref = Ref, serials = Serials, cuts = Cuts}] ->
+	    ZoneRef = #zone_ref{name = ZoneName, ref = Ref},
+	    ets:delete(?TAB_TSIG, ZoneRef),
 	    ok = decrement_zone_entry_cuts(ZoneNameLabels),
 	    case Cuts of
 		0 -> ets:delete(?TAB_ZONE, ZoneNameLabels);
@@ -384,14 +387,25 @@ do_delete_zone(ZoneName) ->
 		    NewZone = #zone{labels = ZoneNameLabels, cuts = Cuts - 1},
 		    ets:insert(?TAB_ZONE, NewZone)
 	    end,
-	    ?SERVER ! {clean_zone, ZoneName, Ref, Serials},
-	    ok;
+	    ok = schedule_clean_zone(ZoneRef, Serials);
 	[] -> ok
     end.
 
-clean_zone(ZoneName, Ref, Serials) ->
+schedule_clean_zone(#zone_ref{} = ZoneRef, Serials) ->
+    schedule_clean_zone(ZoneRef, Serials, 0).
+
+schedule_clean_zone(ZoneName, Ref, Serials)
+  when is_binary(ZoneName) andalso is_list(Serials)->
     ZoneRef = #zone_ref{name = ZoneName, ref = Ref},
-    clean_zone(ZoneRef, Serials).
+    schedule_clean_zone(ZoneRef, Serials, 0);
+schedule_clean_zone(#zone_ref{} = ZoneRef, Serials, After)
+  when is_integer(After) andalso After >= 0 ->
+    _ = erlang:send_after(After, self(), {clean_zone, ZoneRef, Serials}),
+    ok.
+
+schedule_clean_zone(ZoneName, Ref, Serials, After) ->
+    ZoneRef = #zone_ref{name = ZoneName, ref = Ref},
+    schedule_clean_zone(ZoneRef, Serials, After).
 
 clean_zone(ZoneRef, [Serial|Serials]) ->
     SerialRef = #serial_ref{zone_ref = ZoneRef, serial = Serial},
@@ -403,6 +417,7 @@ clean_zone(ZoneRef, [Serial|Serials]) ->
 		    || Type <- Types ]
 	  end,
     [#rrmap{sets = Sets}] = ets:lookup(?TAB_RRMAP, SerialRef),
+    true = ets:delete(?TAB_RRMAP, SerialRef),
     lists:foreach(Fun, Sets),
     clean_zone(ZoneRef, Serials);
 clean_zone(_ZoneRef, []) -> ok.
@@ -454,8 +469,7 @@ add_to_zone_tab(ZoneName, Ref, Serials, AXFR, #dnsxd_soa_param{} = SOA, NSEC3)
 	    true = ets:insert(?TAB_ZONE, NewZone#zone{cuts = Cuts}),
 	    ok = increment_zone_entry_cut(ZoneNameLabels);
 	[#zone{ref = OldRef, serials = OldSerials, cuts = Cuts}] ->
-	    CleanupMsg = {clean_zone, ZoneName, OldRef, OldSerials},
-	    erlang:send_after(1000, self(), CleanupMsg),
+	    ok = schedule_clean_zone(ZoneName, OldRef, OldSerials, 1000),
 	    true = ets:insert(?TAB_ZONE, NewZone#zone{cuts = Cuts}),
 	    ok;
 	[] ->
