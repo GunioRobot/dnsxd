@@ -105,13 +105,16 @@ get_key(FQKeyName) ->
 	undefined -> undefined;
 	{KeyName, ZoneName} ->
 	    ZoneNameLabels = dns:dname_to_labels(ZoneName),
-	    [#zone{name = ZoneName, ref = Ref}] =
-		ets:lookup(?TAB_ZONE, ZoneNameLabels),
-	    ZoneRef = #zone_ref{name = ZoneName, ref = Ref},
-	    Keys = ets:lookup_element(?TAB_TSIG, ZoneRef, #tsig.keys),
-	    case lists:keyfind(KeyName, #dnsxd_tsig_key.name, Keys) of
-		#dnsxd_tsig_key{} = Key -> {ZoneName, Key};
-		false -> undefined
+	    case ets:lookup(?TAB_ZONE, ZoneNameLabels) of
+		[#zone{name = ZoneName, ref = Ref}] ->
+		    ZoneRef = #zone_ref{name = ZoneName, ref = Ref},
+		    Keys = ets:lookup_element(?TAB_TSIG, ZoneRef, #tsig.keys),
+		    case lists:keyfind(KeyName, #dnsxd_tsig_key.name, Keys) of
+			#dnsxd_tsig_key{} = Key -> {ZoneName, Key};
+			false -> undefined
+		    end;
+		[#zone{name = undefined}] -> undefined;
+		[] -> undefined
 	    end
     end.
 
