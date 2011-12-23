@@ -162,7 +162,7 @@ do_get_nsec3_cover(SerialRef, Hash, [_|[_|_] = Hashes]) ->
     do_get_nsec3_cover(SerialRef, Hash, Hashes);
 do_get_nsec3_cover(SerialRef, _Hash, [#nsec3{hashdn = HashDN}]) ->
     RRNameRef = #rrname_ref{serial_ref = SerialRef, name = HashDN},
-    match_set(RRNameRef, ?DNS_TYPE_NSEC3, true).
+    match_set(RRNameRef, ?DNS_TYPE_NSEC3).
 
 get_nsec3_hash(#zone_ref{name = ZoneName}, Name) ->
     ZoneNameLabels = dns:dname_to_labels(ZoneName),
