@@ -148,9 +148,10 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg)
 	    end;
 	undefined ->
-	    case dnsxd_ds_server:zone_for_name(KeyName) of
+	    case dnsxd_ds_server:zone_ref_for_name(KeyName) of
 		undefined -> ok;
-		ZoneName ->
+		ZoneRef ->
+		    ZoneName = dnsxd_ds_server:zonename_from_ref(ZoneRef),
 		    dnsxd:log(MsgCtx, [{zone, ZoneName},
 				       {tsig_err, badkey}|LogProps])
 	    end,
