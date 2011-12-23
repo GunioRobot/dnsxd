@@ -199,7 +199,7 @@ remove_serial_tracking(Tab, ZoneName) ->
 add_serial_tracking(Tab, ZoneName) ->
     Now = dns:unix_time(),
     case dnsxd_ds_server:next_serial(ZoneName) of
-	Serial when Serial > Now ->
+	Serial when is_integer(Serial) andalso Serial > Now ->
 	    Msg = {new_serial, ZoneName},
 	    Ref = timer:send_after((Serial - Now) * 1000, ?SERVER, Msg),
 	    Entry = #serialchange{zonename = ZoneName,
