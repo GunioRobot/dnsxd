@@ -128,16 +128,18 @@ options() ->
      {disable, undefined, "disable", undefined, "Disable DNSSEC"},
      {create, $c, "create", undefined, "New RSA DNSSEC key"},
      {ksk, $k, "ksk", boolean, "New key is a KSK (default: false)"},
-     {bits, $b, "bits", integer, "New key bits"},
+     {bits, $b, "bits", {integer, 512}, "New key bits"},
      {incept, $i, "incept", {integer, 0},
       "Days before new key inception (default: 0)"},
-     {expire, $e, "expire", integer,
+     {expire, $e, "expire", {integer, 365},
       "Days before new key expires (default: 365)"},
      {siglife, undefined, "siglife", integer, "Set signature life"},
      {nsec3_salt, undefined, "salt", binary, "Set NSEC3 salt"},
      {nsec3_iterations, undefined, "iterations", integer,
       "Set NSEC3 iterations"},
      {delete, undefined, "delete", binary, "Delete a DNSSEC key"}].
+
+-define(META_OPTIONS, [bits, incept, expire]).
 
 process_opts(Opts0) ->
     case lists:keytake(zonename, 1, Opts0) of
@@ -233,7 +235,13 @@ build_requests([{siglife, Siglife}|Opts], Requests)
 build_requests([Action|Opts], Requests)
   when Action =:= list orelse Action =:= status->
     Req = {Action, true},
-    build_requests(Opts, [Req|Requests]).
+    build_requests(Opts, [Req|Requests]);
+build_requests([Opt|Rest] = Opts, Requests) ->
+    Fun = fun({Tag, _}) -> lists:member(Tag, ?META_OPTIONS) end,
+    case lists:all(Fun, Opts) of
+	true -> build_requests([], Requests);
+	false -> build_requests(lists:append([Opt], Rest), Requests)
+    end.
 
 get_key_gen_param(Key, List) -> get_key_gen_param(Key, List, []).
 
