@@ -185,7 +185,8 @@ as_list(Atom) when is_atom(Atom) -> atom_to_list(Atom).
 
 take_bool_opt(Key, List) ->
     Result = proplists:get_bool(Key, List),
-    NewList = [ Term || Term <- List, Key =/= Term ],
+    Fun = fun({Term, _}) -> Term =/= Key; (Term) -> Term =/= Key end,
+    NewList = [ Term || Term <- List, Fun(Term) ],
     {Result, NewList}.
 
 bool_to_enabled(true) -> "enabled";
