@@ -197,7 +197,8 @@ lookup_set(QName, #rrname_ref{name = Name} = NameRef, QType) ->
     ZoneName = zonename_from_ref(NameRef),
     SetRef = #rrset_ref{rrname_ref = NameRef, type = QType},
     case lookup_set(SetRef, QName) of
-	undefined when QType =/= ?DNS_TYPE_NS ->
+	undefined when QType =:= ?DNS_TYPE_NS -> nodata;
+	undefined ->
 	    SetRefCname = SetRef#rrset_ref{type = ?DNS_TYPE_CNAME},
 	    case lookup_set(SetRefCname, QName) of
 		undefined ->
