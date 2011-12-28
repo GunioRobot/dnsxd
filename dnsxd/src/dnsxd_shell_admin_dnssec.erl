@@ -81,7 +81,7 @@ display_changes(ZoneName, [{Key, Value}|Changes]) ->
     KeyString = case Key of
 		    nsec3salt -> "NSEC3 salt";
 		    nsec3iter -> "NSEC3 iterations";
-		    siglife -> "Signature life"
+		    dnssec_siglife -> "Signature life"
 		end,
     io:format("~s now ~p~n", [KeyString, Value]),
     display_changes(ZoneName, Changes).
