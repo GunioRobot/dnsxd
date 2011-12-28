@@ -163,23 +163,25 @@ answer(QName, Name, Type, Ref, Props) ->
 	    end
     end.
 
-authority(ref = Ref, Props) ->
+authority(Ref, Props) ->
     Name = dnsxd_ds_server:zonename_from_ref(Ref),
     An = orddict:fetch(an, Props),
     Type = case orddict:fetch(rc, Props) =:= nxdomain of
 	       true -> ?DNS_TYPE_SOA;
 	       false -> ?DNS_TYPE_NS
 	   end,
-    {match, RRSet} = dnsxd_ds_server:lookup_set(Ref, Name, Name, Type),
-    case lists:member(RRSet, An) of
-	true -> additional(Ref, Props);
-	false ->
-	    Au = orddict:fetch(au, Props),
-	    NewAu = [RRSet|Au],
-	    Props0 = orddict:store(au, NewAu, Props),
-	    additional(Ref, Props0)
-    end;
-authority(_, Props) -> Props.
+    case dnsxd_ds_server:lookup_set(Ref, Name, Name, Type) of
+	{match, RRSet} ->
+	    case lists:member(RRSet, An) of
+		true -> additional(Ref, Props);
+		false ->
+		    Au = orddict:fetch(au, Props),
+		    NewAu = [RRSet|Au],
+		    Props0 = orddict:store(au, NewAu, Props),
+		    additional(Ref, Props0)
+	    end;
+	nodata -> additional(Ref, Props)
+    end.
 
 additional(_Ref, Props) -> Props.
 
