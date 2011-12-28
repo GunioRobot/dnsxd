@@ -167,8 +167,7 @@ start_new_llq(SupPid, #dns_query{name = NameM} = Q, ClientPid, MsgCtx,
 			 [ClientPid, Id, ZoneName, MsgCtx, Q, DoDNSSEC]},
 		    temporary, 2000, worker, [dnsxd_llq_server]},
 	    {ok, LLQPid} = supervisor:start_child(SupPid, Spec),
-	    {ok, Id, ZoneName, LLQPid};
-	undefined -> bad_zone
+	    {ok, Id, ZoneName, LLQPid}
     end.
 
 new_id() ->
