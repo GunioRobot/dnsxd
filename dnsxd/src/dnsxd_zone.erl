@@ -83,9 +83,9 @@ main(TempTab, Workers, Limit, Serials, Ref, Zone) ->
 
 worker_limit() ->
     case application:get_env(dnsxd, insert_workers) of
-	Int when is_integer(Int) -> Int;
+	{ok, Int} when is_integer(Int) andalso Int > 0 -> Int;
 	_ ->
-	    Limit = case erlang:system_info(logical_processors_available) of
+	    Limit0 = case erlang:system_info(logical_processors_available) of
 			Int when is_integer(Int) -> Int - 1;
 			_ ->
 			    case erlang:system_info(logical_processors) of
@@ -93,8 +93,9 @@ worker_limit() ->
 				_ -> 2
 			    end
 		    end,
-	    application:set_env(dnsxd, insert_workers, Limit),
-	    Limit
+	    Limit1 = max(1, Limit0),
+	    application:set_env(dnsxd, insert_workers, Limit1),
+	    Limit1
     end.
 
 prep_tsigkey(#dnsxd_zone{tsig_keys = Keys} = Zone) ->
