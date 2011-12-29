@@ -71,5 +71,5 @@ display_llqs(LLQs) ->
     dnsxd_shell_lib:halt(0).
 
 format_query(#dns_query{name = Name, type = Type}) ->
-    TypeBin = atom_to_binary(dns:type_to_atom(Type), latin1),
+    TypeBin = dns:type_name(Type),
     <<Name/binary, $/, TypeBin/binary>>.

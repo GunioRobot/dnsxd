@@ -41,7 +41,8 @@ dispatch(MsgCtx, ReqMsgBin) when is_binary(ReqMsgBin) ->
 	    if Error =:= truncated andalso Proto =:= udp ->
 		    ?DNSXD_ERR("Partial message received. "
 			       "Larger udp_recbuf_size may be needed.");
-	       true -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]) end;
+	       true -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg,
+					  [{rc, ?DNS_RCODE_FORMERR}]) end;
 	{_Error, undefined, _RemainingBin} -> ok
     catch Class:Exception ->
 	    ?DNSXD_ERR(
@@ -67,22 +68,23 @@ dispatch(MsgCtx, #dns_message{} = ReqMsg) ->
 %%% Internal functions
 %%%===================================================================
 
-handler(#dns_message{oc = 'query',
+handler(#dns_message{oc = ?DNS_OPCODE_QUERY,
 		     qc = 1,
 		     questions = [#dns_query{type = ?DNS_TYPE_MAILA}]}) ->
     fun dnsxd_op_notimp:handle/2;
-handler(#dns_message{oc = 'query', qc = 1,
+handler(#dns_message{oc = ?DNS_OPCODE_QUERY, qc = 1,
 		     questions = [#dns_query{type = ?DNS_TYPE_MAILB}]}) ->
     fun dnsxd_op_notimp:handle/2;
-handler(#dns_message{oc = 'query', qc = 1,
+handler(#dns_message{oc = ?DNS_OPCODE_QUERY, qc = 1,
 		     questions = [#dns_query{type = ?DNS_TYPE_AXFR}]}) ->
     fun dnsxd_op_axfr:handle/2;
-handler(#dns_message{oc = 'query', qc = 1} = Msg) ->
+handler(#dns_message{oc = ?DNS_OPCODE_QUERY, qc = 1} = Msg) ->
     case has_llq(Msg) of
 	true -> fun dnsxd_op_llq:handle/2;
 	false -> fun dnsxd_op_query:handle/2
     end;
-handler(#dns_message{oc = 'update', qc = 1}) -> fun dnsxd_op_update:handle/2;
+handler(#dns_message{oc = ?DNS_OPCODE_UPDATE, qc = 1}) ->
+    fun dnsxd_op_update:handle/2;
 handler(_) -> fun dnsxd_op_notimp:handle/2.
 
 set_max_size(MsgCtx, #dns_message{additional = Additional}) ->
@@ -115,11 +117,11 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
     #dns_rrdata_tsig{alg = AlgM, msgid = MsgId} = Data,
     Alg = dns:dname_to_lower(AlgM),
     KeyName = dns:dname_to_lower(KeyNameM),
-    Reply = ReqMsg#dns_message{qr = true, rc = notauth,
+    Reply = ReqMsg#dns_message{qr = true, rc = ?DNS_RCODE_NOTAUTH,
 			       anc = 0, answers = [],
 			       auc = 0, authority = [],
 			       adc = 0, additional = []},
-    LogProps = [{op, OC}, {rc, notauth}, {keyname, KeyName}],
+    LogProps = [{op, OC}, {rc, ?DNS_RCODE_NOTAUTH}, {keyname, KeyName}],
     case dnsxd:get_key(KeyName) of
 	{ZoneName, #dnsxd_tsig_key{secret = Secret}} ->
 	    LogPropsZone = [{zone, ZoneName}|LogProps],
@@ -133,18 +135,16 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
 					      msgid = MsgId},
 		    NewMsgCtx = dnsxd_op_ctx:tsig(MsgCtx, TSIGCtx),
 		    dispatch(NewMsgCtx, ReqMsg);
-		{ok, badtime} ->
-		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badtime,
+		{error, ?DNS_TSIGERR_BADTIME} ->
+		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>,
+					   ?DNS_TSIGERR_BADTIME,
 					   [{other, <<(dns:unix_time()):32>>}]),
-		    dnsxd:log(MsgCtx, [{tsig_err, badtime}|LogPropsZone]),
+		    dnsxd:log(MsgCtx, [{tsig_err, ?DNS_TSIGERR_BADTIME}
+				       |LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg);
-		{ok, TSIGRC} ->
+		{error, TSIGRC} ->
 		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, TSIGRC),
 		    dnsxd:log(MsgCtx, [{tsig_err, TSIGRC}|LogPropsZone]),
-		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg);
-		{error, bad_alg} ->
-		    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badsig),
-		    dnsxd:log(MsgCtx, [{tsig_err, badalg}|LogPropsZone]),
 		    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg)
 	    end;
 	undefined ->
@@ -152,10 +152,11 @@ verify_tsig(MsgCtx, #dns_message{oc = OC} = ReqMsg,
 		undefined -> ok;
 		ZoneRef ->
 		    ZoneName = dnsxd_ds_server:zonename_from_ref(ZoneRef),
-		    dnsxd:log(MsgCtx, [{zone, ZoneName},
-				       {tsig_err, badkey}|LogProps])
+		    LogProps0 = [{zone, ZoneName},
+				 {tsig_err, ?DNS_TSIGERR_BADKEY}|LogProps],
+		    dnsxd:log(MsgCtx, LogProps0)
 	    end,
-	    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, badkey),
+	    RespMsg = dns:add_tsig(Reply, Alg, <<>>, <<>>, ?DNS_TSIGERR_BADKEY),
 	    dnsxd_op_ctx:to_wire(MsgCtx, RespMsg)
     end.
 
@@ -165,7 +166,7 @@ has_llq(_) -> false.
 
 try_send_servfail(Ctx, #dns_message{} = ReqMsg) ->
     try
-	RespMsg = ReqMsg#dns_message{qr = true, rc = servfail},
+	RespMsg = ReqMsg#dns_message{qr = true, rc = ?DNS_RCODE_SERVFAIL},
 	RespMsgBin = dns:encode_message(RespMsg),
 	ok = dnsxd_op_ctx:send(Ctx, RespMsgBin)
     catch Class:Exception ->

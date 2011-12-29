@@ -209,7 +209,8 @@ insert_zone(#dnsxd_couch_zone{enabled = true} = CouchZone) ->
     dnsxd:reload_zone(Zone);
 insert_zone(#dnsxd_couch_zone{enabled = false}) -> {error, disabled}.
 
-update_zone_int(0, _MsgCtx, _Key, _ZoneName, _PreReqs, _Updates) -> servfail;
+update_zone_int(0, _MsgCtx, _Key, _ZoneName, _PreReqs, _Updates) ->
+    ?DNS_RCODE_SERVFAIL;
 update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
     NewAttempts = Attempts - 1,
     case dnsxd_couch_zone:update(MsgCtx, Key, ZoneName, PreReqs, Updates) of

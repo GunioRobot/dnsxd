@@ -34,16 +34,16 @@ handle(MsgCtx, #dns_message{qc = 1,
 			   } = ReqMsg) ->
     Name = dns:dname_to_lower(QName),
     Props0 = case dnsxd_ds_server:zone_ref_for_name(Name) of
-		 undefined -> [{rc, refused}];
+		 undefined -> [{rc, ?DNS_RCODE_REFUSED}];
 		 Ref ->
 		     DNSSEC = do_dnssec(ReqMsg, Ref),
 		     Props = [{aa, true}, {ad, []}, {an, []}, {au, []},
-			      {dnssec, DNSSEC}, {rc, nxdomain}],
+			      {dnssec, DNSSEC}, {rc, ?DNS_RCODE_NXDOMAIN}],
 		     answer(QName, Name, Type, Ref, Props)
 	     end,
     dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props0);
 handle(MsgCtx, #dns_message{} = ReqMsg) ->
-    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}]).
+    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, ?DNS_RCODE_REFUSED}]).
 
 do_dnssec(#dns_message{additional=[#dns_optrr{dnssec = DNSSEC}|_]}, Ref) ->
     DNSSEC andalso dnsxd_ds_server:is_dnssec_zone(Ref);
@@ -53,7 +53,7 @@ answer(QName, Name, ?DNS_TYPE_ANY, Ref, Props) ->
     DNSSEC = orddict:fetch(dnssec, Props),
     case dnsxd_ds_server:lookup_rrname(Ref, Name) of
 	{found, Name} ->
-	    Props0 = orddict:store(rc, noerror, Props),
+	    Props0 = orddict:store(rc, ?DNS_RCODE_NOERROR, Props),
 	    case dnsxd_ds_server:lookup_sets(Ref, QName, Name) of
 		{match, Sets} ->
 		    Props1 = orddict:append_list(an, Sets, Props0),
@@ -63,7 +63,7 @@ answer(QName, Name, ?DNS_TYPE_ANY, Ref, Props) ->
 		    orddict:append_list(ad, Sets, Props1)
 	    end;
 	{found_wild, _LastName, PlainName, WildName} ->
-	    Props0 = orddict:store(rc, noerror, Props),
+	    Props0 = orddict:store(rc, ?DNS_RCODE_NOERROR, Props),
 	    Props1 = append_nsec3_cover(Ref, PlainName, Props0, DNSSEC),
 	    case dnsxd_ds_server:lookup_sets(Ref, QName, WildName) of
 		{match, Sets} ->
@@ -94,7 +94,7 @@ answer(QName, Name, Type, Ref, Props) ->
     DNSSEC = orddict:fetch(dnssec, Props),
     case dnsxd_ds_server:lookup_rrname(Ref, Name) of
 	{found, Name} ->
-	    Props0 = orddict:store(rc, noerror, Props),
+	    Props0 = orddict:store(rc, ?DNS_RCODE_NOERROR, Props),
 	    case dnsxd_ds_server:lookup_set(Ref, QName, Name, Type) of
 		nodata ->
 		    Props1 = append_nsec3_cover(Ref, Name, Props0, DNSSEC),
@@ -121,7 +121,7 @@ answer(QName, Name, Type, Ref, Props) ->
 		    additional(Ref, Props3)
 	    end;
 	{found_wild, LastName, PlainName, WildName} ->
-	    Props0 = orddict:store(rc, noerror, Props),
+	    Props0 = orddict:store(rc, ?DNS_RCODE_NOERROR, Props),
 	    Props1 = append_nsec3_cover(Ref, PlainName, Props0, DNSSEC),
 	    case dnsxd_ds_server:lookup_set(Ref, QName, WildName, Type) of
 		nodata ->
@@ -166,7 +166,7 @@ answer(QName, Name, Type, Ref, Props) ->
 authority(Ref, Props) ->
     Name = dnsxd_ds_server:zonename_from_ref(Ref),
     An = orddict:fetch(an, Props),
-    Type = case orddict:fetch(rc, Props) =:= nxdomain of
+    Type = case orddict:fetch(rc, Props) =:= ?DNS_RCODE_NXDOMAIN of
 	       true -> ?DNS_TYPE_SOA;
 	       false -> ?DNS_TYPE_NS
 	   end,

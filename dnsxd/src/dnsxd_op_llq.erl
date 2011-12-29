@@ -31,29 +31,36 @@ handle(MsgCtx,
        #dns_message{questions = [#dns_query{} = Query],
 		    additional = [#dns_optrr{
 				     data = [#dns_opt_llq{
-						opcode = setup, id = 0} = LLQ]
+						opcode = ?DNS_LLQOPCODE_SETUP,
+						id = 0} = LLQ]
 				    }]} = ReqMsg) ->
     case query_ok(Query) of
 	true ->
 	    case dnsxd:new_llq(self(), MsgCtx, ReqMsg) of
 		ok -> ok;
 		{ok, servfull} ->
-		    RespLLQ = LLQ#dns_opt_llq{errorcode = servfull,
-					      leaselife = 300},
-		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [RespLLQ]);
+		    Props = [LLQ#dns_opt_llq{
+			       errorcode = ?DNS_LLQERRCODE_SERVFULL,
+			       leaselife = 300}],
+		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props);
 		{ok, bad_zone} ->
-		    RespLLQ = LLQ#dns_opt_llq{errorcode = static},
-		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}, RespLLQ])
+		    Props = [LLQ#dns_opt_llq{
+			       errorcode = ?DNS_LLQERRCODE_STATIC},
+			     {rc, ?DNS_RCODE_REFUSED}],
+		    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props)
 	    end;
-	false -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, refused}, LLQ])
+	false ->
+	    Props = [LLQ#dns_opt_llq{errorcode = ?DNS_LLQERRCODE_STATIC},
+		     {rc, ?DNS_RCODE_REFUSED}],
+	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props)
     end;
 handle(MsgCtx, #dns_message{
 	 additional = [#dns_optrr{data = [#dns_opt_llq{} = LLQ]} = OptRR]
 	} = ReqMsg) ->
     case dnsxd:msg_llq(MsgCtx, ReqMsg) of
 	ok -> ok;
-	{error, nosuchllq} ->
-	    RespLLQ = LLQ#dns_opt_llq{errorcode = nosuchllq},
+	{error, ErrorCode} ->
+	    RespLLQ = LLQ#dns_opt_llq{errorcode = ErrorCode},
 	    RespOptRR = OptRR#dns_optrr{data = [RespLLQ]},
 	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [RespOptRR])
     end.
@@ -62,12 +69,6 @@ handle(MsgCtx, #dns_message{
 %%% Internal functions
 %%%===================================================================
 
-query_ok(#dns_query{class = Class} = Query) when is_atom(Class) ->
-    NewClass = dns:class_to_int(Class),
-    query_ok(Query#dns_query{class = NewClass});
-query_ok(#dns_query{type = Type} = Query) when is_atom(Type) ->
-    NewType = dns:class_to_int(Type),
-    query_ok(Query#dns_query{type = NewType});
 query_ok(#dns_query{class = ?DNS_CLASS_ANY}) -> false;
 query_ok(#dns_query{type = ?DNS_TYPE_ANY}) -> false;
 query_ok(#dns_query{class = ?DNS_CLASS_NONE}) -> false;

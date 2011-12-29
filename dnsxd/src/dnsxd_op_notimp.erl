@@ -28,4 +28,4 @@
 %%%===================================================================
 
 handle(MsgCtx, #dns_message{} = ReqMsg) ->
-    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, notimp}]).
+    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, ?DNS_RCODE_NOTIMP}]).

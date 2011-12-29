@@ -117,7 +117,7 @@ reply(MsgCtx, #dns_message{} = Msg, Props) ->
 
 reply_body(MsgCtx, Msg, Props) ->
     Now = dns:unix_time(),
-    RC = proplists:get_value(rc, Props, noerror),
+    RC = proplists:get_value(rc, Props, ?DNS_RCODE_NOERROR),
     AA = proplists:get_bool(aa, Props),
     DNSSEC = proplists:get_bool(dnssec, Props),
     An = to_rr(Now, DNSSEC, proplists:get_value(an, Props, [])),
@@ -260,7 +260,8 @@ maybe_add_tsig(MsgCtx, #dns_message{id = MsgId} = Msg0) ->
 			msgid = OrigMsgId} ->
 	    Opts = [{mac, MAC}],
 	    Msg1 = Msg0#dns_message{id = OrigMsgId},
-	    Msg2 = dns:add_tsig(Msg1, Alg, KeyName, Secret, noerror, Opts),
+	    Msg2 = dns:add_tsig(Msg1, Alg, KeyName, Secret,
+				?DNS_TSIGERR_NOERROR, Opts),
 	    Msg2#dns_message{id = MsgId};
 	undefined -> Msg0
     end.

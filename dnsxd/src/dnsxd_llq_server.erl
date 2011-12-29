@@ -68,21 +68,22 @@ handle_msg(Pid, MsgCtx,
     handle_msg(Pid, MsgCtx, Msg, LLQ).
 
 handle_msg(Pid, MsgCtx, #dns_message{} = Msg, #dns_opt_llq{errorcode = Error})
-  when Error =/= noerror -> gen_server:call(Pid, {error, MsgCtx, Msg});
+  when Error =/= ?DNS_LLQERRCODE_NOERROR ->
+    gen_server:call(Pid, {error, MsgCtx, Msg});
 handle_msg(Pid, MsgCtx, #dns_message{} = Msg,
-	   #dns_opt_llq{opcode = setup, id = 0}) ->
+	   #dns_opt_llq{opcode = ?DNS_LLQOPCODE_SETUP, id = 0}) ->
     gen_server:call(Pid, {setup_request, MsgCtx, Msg});
 handle_msg(Pid, MsgCtx, #dns_message{} = Msg,
-	   #dns_opt_llq{opcode = setup}) ->
+	   #dns_opt_llq{opcode = ?DNS_LLQOPCODE_SETUP}) ->
     gen_server:call(Pid, {setup_response, MsgCtx, Msg});
 handle_msg(Pid, MsgCtx, #dns_message{} = Msg,
-	   #dns_opt_llq{opcode = refresh, leaselife = 0}) ->
+	   #dns_opt_llq{opcode = ?DNS_LLQOPCODE_REFRESH, leaselife = 0}) ->
     gen_server:call(Pid, {cancel_lease, MsgCtx, Msg});
 handle_msg(Pid, MsgCtx, #dns_message{} = Msg,
-	   #dns_opt_llq{opcode = refresh}) ->
+	   #dns_opt_llq{opcode = ?DNS_LLQOPCODE_REFRESH}) ->
     gen_server:call(Pid, {renew_lease, MsgCtx, Msg});
 handle_msg(Pid, MsgCtx, #dns_message{} = Msg,
-	   #dns_opt_llq{opcode = event}) ->
+	   #dns_opt_llq{opcode = ?DNS_LLQOPCODE_EVENT}) ->
     gen_server:call(Pid, {event, MsgCtx, Msg}).
 
 %%%===================================================================
@@ -255,7 +256,9 @@ resend_changes(Now, #state{id = LLQId, q = Q, msgctx = MsgCtx,
 		       changes = Changes}|Unchecked])
   when (LastSent + Count * 2) < Now ->
     LeaseLife = Expire - dns:unix_time(),
-    LLQ = #dns_opt_llq{opcode = event, errorcode = noerror, id = LLQId,
+    LLQ = #dns_opt_llq{opcode = ?DNS_LLQOPCODE_EVENT,
+		       errorcode = ?DNS_LLQERRCODE_NOERROR,
+		       id = LLQId,
 		       leaselife = LeaseLife},
     OptRR = #dns_optrr{dnssec = DoDNSSEC, data = [LLQ]},
     Msg = #dns_message{qr = true, aa = true,
@@ -287,7 +290,9 @@ send_changes(#state{id = LLQId, zonename = ZoneName, q = Q, msgctx = MsgCtx,
 
 send_changes(Events, MsgCtx, LLQId, Q, DoDNSSEC, Changes, LeaseLife) ->
     MsgId = send_changes_mkid(Events),
-    LLQ = #dns_opt_llq{opcode = event, errorcode = noerror, id = LLQId,
+    LLQ = #dns_opt_llq{opcode = ?DNS_LLQOPCODE_EVENT,
+		       errorcode = ?DNS_LLQERRCODE_NOERROR,
+		       id = LLQId,
 		       leaselife = LeaseLife},
     OptRR = #dns_optrr{dnssec = DoDNSSEC, data = [LLQ]},
     MsgBase = #dns_message{id = MsgId, qr = true, aa = true,

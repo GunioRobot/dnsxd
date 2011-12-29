@@ -118,7 +118,7 @@ update(#dnsxd_couch_zone{rr = RRs, tombstone_period = TombstonePeriod} = Zone,
 	    NewZone = Zone#dnsxd_couch_zone{rr = NewRRs},
 	    case put(NewZone) of
 		ok ->
-		    {ok, noerror};
+		    {ok, ?DNS_RCODE_NOERROR};
 		{error, _Reason} = Error ->
 		    timer:sleep(50),
 		    Error

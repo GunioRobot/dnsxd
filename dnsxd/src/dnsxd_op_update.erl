@@ -54,11 +54,13 @@ handle(MsgCtx, #dns_message{questions = [#dns_query{name = ZoneNameM,
 		    end
 	    end;
 	_ ->
-	    dnsxd:log(MsgCtx, [{zone, ZoneName}, {rc, notauth}, {op, update}]),
-	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, notauth}])
+	    dnsxd:log(MsgCtx, [{zone, ZoneName},
+			       {rc, ?DNS_RCODE_NOTAUTH},
+			       {op, ?DNS_OPCODE_UPDATE}]),
+	    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, ?DNS_RCODE_NOTAUTH}])
     end;
 handle(MsgCtx, #dns_message{} = ReqMsg) ->
-    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, formerr}]).
+    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, [{rc, ?DNS_RCODE_FORMERR}]).
 
 %%%===================================================================
 %%% Internal functions
@@ -103,7 +105,7 @@ update(MsgCtx,
 					PreReqTuple, UpdateTuple),
 	{RC, LeaseLength}
     catch throw:formerr ->
-	    {formerr, undefined}
+	    {?DNS_RCODE_FORMERR, undefined}
     end.
 
 rr_to_prereq(_, #dns_rr{name = Name,
@@ -162,7 +164,7 @@ rr_to_update(_Class, _LeaseLength, _RR) -> throw(formerr).
 is_dnssd_rr(_ZoneNameLabels, KeyName, #dns_rr{type = Type, name = KeyName})
   when Type =:= aaaa orelse Type =:= a -> true;
 is_dnssd_rr(_ZoneNameLabels, KeyName, #dns_rr{type = Type, name = Name})
-  when Type =:= aaaa orelse Type =:= a ->
+  when Type =:= ?DNS_TYPE_AAAA orelse Type =:= ?DNS_TYPE_A ->
     dns:dname_to_lower(Name) =:= dns:dname_to_lower(KeyName);
 is_dnssd_rr(ZoneNameLabels, _KeyName, #dns_rr{} = RR) ->
     dnsxd_lib:is_dnssd_rr(ZoneNameLabels, RR).
