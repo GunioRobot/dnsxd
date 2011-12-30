@@ -72,6 +72,26 @@ is_dnssd_rr(ZoneNameLabels, Name, Type)
     end;
 is_dnssd_rr(_ZoneNameLabels, _Name, _Type) -> false.
 
+-ifdef(TEST).
+
+is_dnssd_rr_test_() ->
+    Cases =  [{true, <<"_http._tcp.example.com">>, ?DNS_TYPE_PTR},
+	      {true, <<"_printer._sub._http._tcp.example.com">>, ?DNS_TYPE_PTR},
+	      {true, <<"_services._dns-sd._udp.example.com">>, ?DNS_TYPE_PTR},
+	      {false, <<"example.com">>, ?DNS_TYPE_PTR},
+	      {true, <<"Test._http._tcp.example.com">>, ?DNS_TYPE_SRV},
+	      {false, <<"example.com">>, ?DNS_TYPE_SRV},
+	      {false, <<"example.com">>, ?DNS_TYPE_A}],
+    CasesRR = [{Bool, #dns_rr{name = Name, type = Type}}
+	       || {Bool, Name, Type} <- Cases ],
+    CasesDRR = [{Bool, #dnsxd_rr{name = Name, type = Type}}
+		|| {Bool, Name, Type} <- Cases ],
+    CasesAll = CasesRR ++ CasesDRR,
+    [ ?_assertEqual(Result, is_dnssd_rr(<<"example.com">>, RR))
+      || {Result, RR} <- CasesAll ].
+
+-endif.
+
 use_procket() ->
     case dnsxd:get_env(procket) of
 	{ok, Props} when is_list(Props) -> proplists:get_bool(enabled, Props);
