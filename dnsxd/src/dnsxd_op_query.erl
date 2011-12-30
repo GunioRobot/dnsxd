@@ -166,7 +166,7 @@ answer(QName, Name, Type, Ref, Props) ->
 authority(Ref, Props) ->
     Name = dnsxd_ds_server:zonename_from_ref(Ref),
     An = orddict:fetch(an, Props),
-    Type = case orddict:fetch(rc, Props) =:= ?DNS_RCODE_NXDOMAIN of
+    Type = case An =:= [] of
 	       true -> ?DNS_TYPE_SOA;
 	       false -> ?DNS_TYPE_NS
 	   end,
