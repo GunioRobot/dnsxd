@@ -97,6 +97,7 @@ dnsxd_reload_zones(ZoneNames) ->
 			      {ok, #dnsxd_couch_zone{enabled = false}} ->
 				  ok = dnsxd:delete_zone(ZoneName);
 			      {error, Reason} when Reason =:= deleted orelse
+						   Reason =:= not_found orelse
 						   Reason =:= not_zone ->
 				  ok = dnsxd:delete_zone(ZoneName);
 			      {error, Reason} -> FailFun(ZoneName, Reason)
