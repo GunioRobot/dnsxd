@@ -88,20 +88,16 @@ handler(#dns_message{oc = ?DNS_OPCODE_UPDATE, qc = 1}) ->
 handler(_) -> fun dnsxd_op_notimp:handle/2.
 
 set_max_size(MsgCtx, #dns_message{additional = Additional}) ->
-    case dnsxd_op_ctx:protocol(MsgCtx) of
-	udp ->
-	    MaxSize = max_udp_payload(),
-	    case Additional of
-		[#dns_optrr{udp_payload_size = ClientSize}|_]
-		  when is_integer(ClientSize) ->
-		    Size = if ClientSize =< 512 -> 512;
-			      ClientSize >= MaxSize -> MaxSize;
-			      true -> ClientSize end,
-		    dnsxd_op_ctx:max_size(MsgCtx, Size);
-		_ ->
-		    dnsxd_op_ctx:max_size(MsgCtx, 512)
-	    end;
-	_ -> dnsxd_op_ctx:max_size(MsgCtx, 65535)
+    MaxSize = max_udp_payload(),
+    case Additional of
+	[#dns_optrr{udp_payload_size = ClientSize}|_]
+	  when is_integer(ClientSize) ->
+	    Size = if ClientSize =< 512 -> 512;
+		      ClientSize >= MaxSize -> MaxSize;
+		      true -> ClientSize end,
+	    dnsxd_op_ctx:max_size(MsgCtx, Size);
+	_ ->
+	    dnsxd_op_ctx:max_size(MsgCtx, 512)
     end.
 
 get_tsig(#dns_message{additional = []}) -> undefined;

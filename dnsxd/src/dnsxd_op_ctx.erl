@@ -27,9 +27,10 @@
 	 src_ip/1, src_port/1,
 	 dst_ip/1, dst_port/1,
 	 send/2,
-	 tsig/1, tsig/2,
+	 tsig/1, tsig/2, tsig_mac/1, tsig_mac/2,
 	 max_size/1, max_size/2,
-	 to_wire/2, to_wire/3, reply/3]).
+	 tc_mode/1, tc_mode/2,
+	 to_wire/2, reply/3]).
 
 -record(dnsxd_op_ctx, {protocol,
 		       socket,
@@ -38,7 +39,8 @@
 		       dst_ip,
 		       dst_port,
 		       tsig,
-		       max_size = 512
+		       max_size = 512,
+		       tc_mode = default
 		      }).
 
 %%%===================================================================
@@ -86,15 +88,41 @@ tsig(#dnsxd_op_ctx{tsig = TSIG}) -> TSIG.
 
 tsig(#dnsxd_op_ctx{} = Ctx, NewTSIG) -> Ctx#dnsxd_op_ctx{tsig = NewTSIG}.
 
+tsig_mac(#dnsxd_op_ctx{tsig = #dnsxd_tsig_ctx{mac =  MAC}}) -> MAC;
+tsig_mac(#dnsxd_op_ctx{}) -> undefined.
+
+tsig_mac(#dnsxd_op_ctx{tsig = #dnsxd_tsig_ctx{} = TSIG} = MsgCtx, NewMAC)
+  when is_binary(NewMAC) ->
+    MsgCtx#dnsxd_op_ctx{tsig = TSIG#dnsxd_tsig_ctx{mac = NewMAC}};
+tsig_mac(_, _) -> erlang:error(badarg).
+
 max_size(#dnsxd_op_ctx{max_size = MaxSize}) -> MaxSize.
 
 max_size(#dnsxd_op_ctx{} = Ctx, NewMaxSize) ->
     Ctx#dnsxd_op_ctx{max_size = NewMaxSize}.
 
-to_wire(MsgCtx, #dns_message{} = Message) -> to_wire(MsgCtx, Message, true).
+tc_mode(#dnsxd_op_ctx{tc_mode = TCMode}) -> TCMode.
 
-to_wire(MsgCtx, #dns_message{} = Message, AutoTC) when is_boolean(AutoTC) ->
-    to_wire_internal(MsgCtx, Message, AutoTC, dict:new()).
+tc_mode(#dnsxd_op_ctx{} = Ctx, NewTCMode) ->
+    Ctx#dnsxd_op_ctx{tc_mode = NewTCMode}.
+
+to_wire(MsgCtx, #dns_message{additional = Ad} = RespMsg0) ->
+    UPS = dnsxd_op_ctx:max_size(MsgCtx),
+    RespMsg1 = case Ad of
+		   [#dns_optrr{} = OptRR|AddRest] ->
+		       NewOptRR = OptRR#dns_optrr{udp_payload_size = UPS},
+		       NewAdd = [NewOptRR|AddRest],
+		       RespMsg0#dns_message{additional = NewAdd};
+		   _ ->
+		       RespMsg0
+	       end,
+    MaxSize = case protocol(MsgCtx) of
+		  tcp -> 65535;
+		  udp -> UPS
+	      end,
+    TCMode = tc_mode(MsgCtx),
+    Opts = [{tc_mode, TCMode}, {max_size, MaxSize}],
+    to_wire_internal(MsgCtx, RespMsg1, Opts, false).
 
 reply(MsgCtx,
       #dns_message{additional = [#dns_optrr{} = OptRR|_]} = Msg, Props) ->
@@ -201,89 +229,30 @@ is_eopt(#dns_opt_ul{}) -> true;
 is_eopt(#dns_opt_nsid{}) -> true;
 is_eopt(_) -> false.
 
-to_wire_internal(MsgCtx, #dns_message{} = Msg, AutoTC, Truncated) ->
-    Protocol = protocol(MsgCtx),
-    TC = Protocol =/= tcp andalso AutoTC,
-    case to_wire_internal(MsgCtx, Msg, TC) of
-	truncate when AutoTC =:= false -> truncate;
-	truncate ->
-	    {NewMsg, NewTruncated} = strip_rr(Msg, Truncated),
-	    to_wire_internal(MsgCtx, NewMsg, AutoTC, NewTruncated);
-	ok when Protocol =:= tcp ->
-	    case dict:to_list(Truncated) of
-		[] -> ok;
-		Items ->
-		    An = lists:reverse(proplists:get_value(an, Items, [])),
-		    AnC = length(An),
-		    Au = lists:reverse(proplists:get_value(au, Items, [])),
-		    AuC = length(Au),
-		    Ad = lists:reverse(proplists:get_value(ad, Items, [])),
-		    AdC = length(Ad),
-		    NewMsg = Msg#dns_message{anc = AnC, auc = AuC, adc = AdC,
-					     answers = An,
-					     authority = Au,
-					     additional = Ad},
-		    to_wire_internal(MsgCtx, NewMsg, AutoTC, dict:new())
-	    end;
-	Other -> Other
+to_wire_internal(MsgCtx, Msg, Opts, Tail) ->
+    Opts0 = add_tsig_opts(MsgCtx, Opts, Tail),
+    case dns:encode_message(Msg, Opts0) of
+	{false, Bin} -> dnsxd_op_ctx:send(MsgCtx, Bin);
+	{false, Bin, _NewMAC} ->
+	    ok = dnsxd_op_ctx:send(MsgCtx, Bin);
+	{true, Bin, Msg0} ->
+	    ok = dnsxd_op_ctx:send(MsgCtx, Bin),
+	    to_wire_internal(MsgCtx, Msg0, Opts, true);
+	{true, Bin, NewMAC, Msg0} ->
+	    MsgCtx0 = tsig_mac(MsgCtx, NewMAC),
+	    ok = dnsxd_op_ctx:send(MsgCtx0, Bin),
+	    to_wire_internal(MsgCtx0, Msg0, Opts, true)
     end.
 
-to_wire_internal(MsgCtx, #dns_message{additional = Add} = RespMsg0, TC) ->
-    MaxSize = dnsxd_op_ctx:max_size(MsgCtx),
-    RespMsg1 = case Add of
-		   [#dns_optrr{} = OptRR|AddRest] ->
-		       NewOptRR = OptRR#dns_optrr{udp_payload_size = MaxSize},
-		       NewAdd = [NewOptRR|AddRest],
-		       RespMsg0#dns_message{additional = NewAdd};
-		   _ ->
-		       RespMsg0
-	       end,
-    RespMsgBin = dns:encode_message(maybe_add_tsig(MsgCtx, RespMsg1)),
-    if MaxSize >= byte_size(RespMsgBin) ->
-	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin);
-       TC =:= false -> truncate;
-       true ->
-	    RespMsg2 = RespMsg1#dns_message{tc = true, anc = 0, adc = 0,
-					    auc = 0, answers = [],
-					    additional = [],
-					    authority = []},
-	    RespMsgBin1 = dns:encode_message(maybe_add_tsig(MsgCtx, RespMsg2)),
-	    dnsxd_op_ctx:send(MsgCtx, RespMsgBin1)
-    end.
-
-maybe_add_tsig(MsgCtx, #dns_message{id = MsgId} = Msg0) ->
+add_tsig_opts(MsgCtx, Opts, Tail) ->
     case dnsxd_op_ctx:tsig(MsgCtx) of
 	#dnsxd_tsig_ctx{keyname = KeyName,
 			alg = Alg,
 			secret = Secret,
 			mac = MAC,
 			msgid = OrigMsgId} ->
-	    Opts = [{mac, MAC}],
-	    Msg1 = Msg0#dns_message{id = OrigMsgId},
-	    Msg2 = dns:add_tsig(Msg1, Alg, KeyName, Secret,
-				?DNS_TSIGERR_NOERROR, Opts),
-	    Msg2#dns_message{id = MsgId};
-	undefined -> Msg0
+	    TSIGOpts = [{name, KeyName}, {alg, Alg}, {secret, Secret},
+			{mac, MAC}, {msgid, OrigMsgId}, {tail, Tail}],
+	    [{tsig, TSIGOpts}|Opts];
+	undefined -> Opts
     end.
-
-strip_rr(#dns_message{anc = C, answers = RR, authority = [], additional = []
-		     } = Msg, Truncated) when is_list(RR) andalso RR =/= [] ->
-    NewC = C - 1,
-    {NewRR, [PoppedRR]} = lists:split(NewC, RR),
-    NewMessage = Msg#dns_message{anc = NewC, answers = NewRR},
-    NewTruncated = dict:append(an, PoppedRR, Truncated),
-    {NewMessage, NewTruncated};
-strip_rr(#dns_message{auc = C, authority = RR, additional = []} = Msg,
-	 Truncated) when is_list(RR) andalso RR =/= [] ->
-    NewC = C - 1,
-    {NewRR, [PoppedRR]} = lists:split(NewC, RR),
-    NewMessage = Msg#dns_message{auc = NewC, authority = NewRR},
-    NewTruncated = dict:append(au, PoppedRR, Truncated),
-    {NewMessage, NewTruncated};
-strip_rr(#dns_message{adc = C, additional = RR} = Msg, Truncated)
-  when is_list(RR) andalso RR =/= [] ->
-    NewC = C - 1,
-    {NewRR, [PoppedRR]} = lists:split(NewC, RR),
-    NewMessage = Msg#dns_message{adc = NewC, additional = NewRR},
-    NewTruncated = dict:append(ad, PoppedRR, Truncated),
-    {NewMessage, NewTruncated}.

@@ -46,7 +46,8 @@ handle(MsgCtx, #dns_message{
 		    Sets = dnsxd_ds_server:get_set_list(ZoneRef),
 		    [{an, collect_sets(ZoneRef, Sets)}, {dnssec, true}]
 	    end,
-    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, Props).
+    MsgCtx0 = dnsxd_op_ctx:tc_mode(MsgCtx, axfr),
+    dnsxd_op_ctx:reply(MsgCtx0, ReqMsg, Props).
 
 %%%===================================================================
 %%% Internal functions

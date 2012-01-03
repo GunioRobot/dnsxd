@@ -294,33 +294,28 @@ send_changes(Events, MsgCtx, LLQId, Q, DoDNSSEC, Changes, LeaseLife) ->
 		       errorcode = ?DNS_LLQERRCODE_NOERROR,
 		       id = LLQId,
 		       leaselife = LeaseLife},
-    OptRR = #dns_optrr{dnssec = DoDNSSEC, data = [LLQ]},
-    MsgBase = #dns_message{id = MsgId, qr = true, aa = true,
-			   qc = 1, questions = [Q],
-			   adc = 1, additional = [OptRR]},
-    case send_changes(Events, MsgCtx, MsgBase, Changes) of
-	{NewEvents, []} -> NewEvents;
-	{NewEvents, LeftoverChanges} ->
-	    send_changes(NewEvents, MsgCtx, LLQId, Q, DoDNSSEC,
-			 LeftoverChanges, LeaseLife)
-    end.
-
-send_changes(Events, MsgCtx, MsgBase, Changes) ->
-    send_changes(Events, MsgCtx, MsgBase, Changes, []).
-
-send_changes(Events, MsgCtx, MsgBase, Changes, Leftover) ->
-    ChangesLen = length(Changes),
-    Msg = MsgBase#dns_message{anc = ChangesLen, answers = Changes},
-    case dnsxd_op_ctx:to_wire(MsgCtx, Msg, false) of
-	ok ->
-	    NewEvent = #event{id = Msg#dns_message.id, changes = Changes,
-			      send_count = 1},
+    MaxSize = case dnsxd_op_ctx:protocol(MsgCtx) of
+		  tcp -> 65535;
+		  _ -> dnsxd_op_ctx:max_size(MsgCtx)
+	      end,
+    OptRR = #dns_optrr{udp_payload_size = MaxSize, dnssec = DoDNSSEC,
+		       data = [LLQ]},
+    Msg = #dns_message{id = MsgId, qr = true, aa = true,
+		       questions = [Q],
+		       answers = Changes,
+		       additional = [OptRR]},
+    case dns:encode_message(Msg, [{max_size, MaxSize},{tc_mode, llq_event}]) of
+	{false, Bin} when is_binary(Bin) ->
+	    dnsxd_op_ctx:send(MsgCtx, Bin),
+	    NewEvent = #event{id = MsgId, changes = Changes, send_count = 1},
+	    [NewEvent|Events];
+	{true, Bin, #dns_message{answers = LeftoverChanges}} ->
+	    dnsxd_op_ctx:send(MsgCtx, Bin),
+	    Changes0 = Changes -- LeftoverChanges,
+	    NewEvent = #event{id = MsgId, changes = Changes0, send_count = 1},
 	    NewEvents = [NewEvent|Events],
-	    {NewEvents, Leftover};
-	truncate ->
-	    {NewChanges, [DroppedRR]} = lists:split(ChangesLen - 1, Changes),
-	    NewLeftover = [DroppedRR|Leftover],
-	    send_changes(Events, MsgCtx, MsgBase, NewChanges, NewLeftover)
+	    send_changes(NewEvents, MsgCtx, LLQId, Q, DoDNSSEC, LeftoverChanges,
+			 LeaseLife)
     end.
 
 send_changes_mkid(Events) ->
