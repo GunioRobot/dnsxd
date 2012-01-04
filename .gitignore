@@ -1,4 +1,6 @@
 *.dump
+*.trace
+*.analysis
 .DS_Store
 doc/
 deps/

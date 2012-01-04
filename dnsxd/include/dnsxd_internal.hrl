@@ -1,6 +1,20 @@
 -ifndef('__dnsxd_internal.hrl__').
 -define('__dnsxd_internal.hrl__', ok).
 
+-define(FPROF(X), fun() ->
+		      _FPROF_FN_PREFIX = ?MODULE_STRING "-" ++
+			  integer_to_list(dns:unix_time()) ++ "-" ++
+			  integer_to_list(erlang:phash2(self())),
+		      _FPROF_FN_TRACE = _FPROF_FN_PREFIX ++ ".trace",
+		      _FPROF_FN_ANALYSIS = _FPROF_FN_PREFIX ++ ".analysis",
+		      ok = fprof:trace(start, _FPROF_FN_TRACE),
+		      _FPROF_RESULT = X,
+		      ok = fprof:trace(stop),
+		      ok = fprof:profile([{file, _FPROF_FN_TRACE}]),
+		      ok = fprof:analyse([totals, {dest, _FPROF_FN_ANALYSIS}]),
+		      _FPROF_RESULT
+		  end()).
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
