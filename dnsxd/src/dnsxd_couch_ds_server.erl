@@ -239,7 +239,8 @@ init_load_zones() ->
 		      {error, not_zone} -> ok
 		  end
 	  end,
-    ok = couchbeam_view:foreach(Fun, DbRef, ViewName, [{key, true}]).
+    Opts = [{<<"key">>, <<"true">>}],
+    ok = couchbeam_view:foreach(Fun, DbRef, ViewName, Opts).
 
 couch_tk_to_dnsxd_key(#dnsxd_couch_tk{id = Id,
 				      name = Name,
