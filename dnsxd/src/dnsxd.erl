@@ -45,7 +45,7 @@
 %% logging
 -export([log/2]).
 
--define(APP_DEPS, [sasl, crypto, public_key, dns]).
+-define(APP_DEPS, [sasl, lager, crypto, public_key, dns]).
 
 %%%===================================================================
 %%% API
@@ -56,7 +56,7 @@ start(_StartType, _StartArgs) ->
 	ok ->
 	    dnsxd_sup:start_link();
 	{error, {App, Error}} ->
-	    ?DNSXD_ERR("Failed to start application ~p:~n~p~n", [App, Error]),
+	    lager:critical("Failed to start application ~p:~n~p~n", [App, Error]),
 	    throw({app_start_failed,App})
     end.
 

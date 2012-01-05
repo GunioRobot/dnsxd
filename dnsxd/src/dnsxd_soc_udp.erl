@@ -41,7 +41,7 @@ loop(#dnsxd_if_spec{} = IfSpec, Socket, ReqSupPid) ->
 	    ReqPid ! Msg,
 	    ?MODULE:loop(IfSpec, Socket, ReqSupPid);
 	Other ->
-	    ?DNSXD_ERR("Stray message:~n~p~n", [Other]),
+	    lager:notice("Stray message:~n~p~n", [Other]),
 	    ?MODULE:loop(IfSpec, Socket, ReqSupPid)
     end.
 

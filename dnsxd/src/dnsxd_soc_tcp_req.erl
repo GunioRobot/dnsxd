@@ -38,9 +38,9 @@ init(#dnsxd_if_spec{protocol = tcp, ip = DstIP, port = DstPort} = IfSpec) ->
 			   timeout = Timeout},
 	    ?MODULE:loop(State);
 	Other ->
-	    ?DNSXD_ERR("Stray message:~n~p~n", [Other])
+	    lager:notice("Stray message:~n~p~n", [Other])
     after Timeout ->
-	    ?DNSXD_ERR(?MODULE_STRING " timed out waiting for socket")
+	    lager:error(?MODULE_STRING " timed out waiting for socket")
     end.
 
 loop(#state{socket = Socket, ctx = Ctx, timeout = Timeout} = State) ->
@@ -51,7 +51,7 @@ loop(#state{socket = Socket, ctx = Ctx, timeout = Timeout} = State) ->
 	    ?MODULE:loop(State);
 	{tcp_closed, Socket} -> ok;
 	Other ->
-	    ?DNSXD_ERR("Stray message:~n~p~n", [Other]),
+	    lager:notice("Stray message:~n~p~n", [Other]),
 	    ok = gen_tcp:close(Socket)
     after Timeout ->
 	    ok = gen_tcp:close(Socket)

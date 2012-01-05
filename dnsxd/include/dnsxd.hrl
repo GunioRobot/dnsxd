@@ -3,14 +3,6 @@
 
 -include_lib("dns/include/dns.hrl").
 
--define(DNSXD_EL(MOD, FMT, ARGS), error_logger:MOD(?MODULE_STRING " ~p:~n" ++
-						   FMT ++ "~n", [self()|ARGS])).
--define(DNSXD_INFO(FMT, ARGS), ?DNSXD_EL(info_msg, FMT, ARGS)).
--define(DNSXD_INFO(FMT), ?DNSXD_INFO(FMT, [])).
-
--define(DNSXD_ERR(FMT, ARGS), ?DNSXD_EL(error_msg, FMT, ARGS)).
--define(DNSXD_ERR(FMT), ?DNSXD_ERR(FMT, [])).
-
 -record(dnsxd_if_spec, {ip, port, protocol}).
 
 -record(dnsxd_tsig_ctx, {zonename, keyname, alg, secret, mac, msgid}).

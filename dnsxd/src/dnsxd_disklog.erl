@@ -61,7 +61,7 @@ init([]) ->
     case disk_log:open(Options) of
 	{ok, Log} -> {ok, #state{log = Log}};
 	{repaired, Log, {recovered, Rec}, {badbytes, Bad}} ->
-	    ?DNSXD_INFO("Repair triggered opening ~s. "
+	    lager:info("Repair triggered opening ~s. "
 			"~p terms recovered ~p bytes lost.",
 			[File, Rec, Bad]),
 	    {ok, #state{log = Log}};
@@ -69,15 +69,15 @@ init([]) ->
     end.
 
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
+    lager:notice("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
+    lager:notice("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
+    lager:notice("Stray message:~n~p~nState:~n~p~n", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, #state{log = Log}) -> ok = disk_log:close(Log).

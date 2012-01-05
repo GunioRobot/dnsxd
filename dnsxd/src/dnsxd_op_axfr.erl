@@ -39,10 +39,10 @@ handle(MsgCtx, #dns_message{
     MsgArgs = [ZoneName, SrcIP, SrcPort],
     Props = case Refuse of
 		true ->
-		    ?DNSXD_INFO("Refusing AXFR of ~s to ~s:~p", MsgArgs),
+		    lager:info("Refusing AXFR of ~s to ~s:~p", MsgArgs),
 		    [{rc, ?DNS_RCODE_REFUSED}];
 		false ->
-		    ?DNSXD_INFO("Allowing AXFR of ~s to ~s:~p", MsgArgs),
+		    lager:info("Allowing AXFR of ~s to ~s:~p", MsgArgs),
 		    Sets = dnsxd_ds_server:get_set_list(ZoneRef),
 		    [{an, collect_sets(ZoneRef, Sets)}, {dnssec, true}]
 	    end,

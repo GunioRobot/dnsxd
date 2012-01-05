@@ -39,13 +39,13 @@ dispatch(MsgCtx, ReqMsgBin) when is_binary(ReqMsgBin) ->
 	{Error, #dns_message{} = ReqMsg, _RemainingBin} ->
 	    Proto = dnsxd_op_ctx:protocol(MsgCtx),
 	    if Error =:= truncated andalso Proto =:= udp ->
-		    ?DNSXD_ERR("Partial message received. "
-			       "Larger udp_recbuf_size may be needed.");
+		    lager:error("Partial message received. "
+				"Larger udp_recbuf_size may be needed.");
 	       true -> dnsxd_op_ctx:reply(MsgCtx, ReqMsg,
 					  [{rc, ?DNS_RCODE_FORMERR}]) end;
 	{_Error, undefined, _RemainingBin} -> ok
     catch Class:Exception ->
-	    ?DNSXD_ERR(
+	    lager:error(
 	       "Error decoding message.~n"
 	       "Class: ~p Exception: ~p Stack Trace:~n~p~n",
 	       [Class, Exception, erlang:get_stacktrace()]
@@ -55,7 +55,7 @@ dispatch(MsgCtx, #dns_message{} = ReqMsg) ->
     Handler = handler(ReqMsg),
     try ok = Handler(MsgCtx, ReqMsg)
     catch Class:Exception ->
-	    ?DNSXD_ERR(
+	    lager:error(
 	       "Error calling ~p.~n"
 	       "Class: ~p Exception: ~p Stack Trace:~n~p~n"
 	       "dnsxd_msg context:~n~p",
@@ -166,7 +166,7 @@ try_send_servfail(Ctx, #dns_message{} = ReqMsg) ->
 	RespMsgBin = dns:encode_message(RespMsg),
 	ok = dnsxd_op_ctx:send(Ctx, RespMsgBin)
     catch Class:Exception ->
-	    ?DNSXD_INFO(
+	    lager:error(
 	       "unable to reply with servfail.~nClass: ~p Exception: ~p~n~p",
 	       [Class, Exception, erlang:get_stacktrace()]
 	      )

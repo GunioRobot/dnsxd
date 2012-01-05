@@ -109,7 +109,7 @@ init([Pid, Id, ZoneName, MsgCtx, Q, DoDNSSEC]) ->
     {ok, State}.
 
 handle_call({error, _MsgCtx, Msg}, _From, #state{} = State) ->
-    ?DNSXD_ERR("LLQ client reported error:~nMessage:~n~p~nState:~p~n",
+    lager:info("LLQ client reported error:~nMessage:~n~p~nState:~p~n",
 	       [Msg, State]),
     {stop, normal, ok, State};
 handle_call({setup_request, MsgCtx, Msg}, _From,
@@ -151,7 +151,7 @@ handle_call({event, _MsgCtx, #dns_message{id = EventId}}, _From,
     NewState2 = set_keepalive(NewState1),
     {reply, ok, NewState2};
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
+    lager:notice("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast({zone_changed, ZoneName},
@@ -165,12 +165,12 @@ handle_cast({zone_changed, ZoneName},
 handle_cast({zone_changed, ZoneName}, #state{zonename = ZoneName} = State) ->
     {noreply, State};
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
+    lager:notice("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info({'DOWN', Ref, _Type, _Object,_Info},
 	    #state{protocol_ref = Ref} = State) ->
-    ?DNSXD_INFO("Transport down. Stopping"),
+    lager:info("Transport down. Stopping"),
     {stop, normal, State};
 handle_info(expire, #state{expire = Expire} = State) ->
     case dns:unix_time() >= Expire of
@@ -187,12 +187,12 @@ handle_info(keepalive, #state{} = State) ->
 handle_info(resend, #state{} = State) ->
     case resend_changes(State) of
 	{ok, missing_ack} ->
-	    ?DNSXD_INFO("Client not-responding - exiting"),
+	    lager:info("Client not-responding - exiting"),
 	    {stop, normal, State};
 	{ok, #state{} = NewState} -> {noreply, NewState}
     end;
 handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
+    lager:notice("Stray message:~n~p~nState:~n~p~n", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, _State) -> ok.

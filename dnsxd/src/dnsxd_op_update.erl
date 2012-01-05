@@ -53,7 +53,7 @@ handle(MsgCtx, #dns_message{questions = [#dns_query{name = ZoneNameM,
 			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, ReplyProps)
 		    end;
 		timeout ->
-		    ?DNSXD_INFO("Update request for ~s timed out", [ZoneName])
+		    lager:warning("Update request for ~s timed out", [ZoneName])
 	    end;
 	_ ->
 	    dnsxd:log(MsgCtx, [{zone, ZoneName},

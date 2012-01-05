@@ -84,7 +84,7 @@ dnsxd_admin_change_zone(ZoneName, [_|_] = Changes) when is_binary(ZoneName) ->
 dnsxd_reload_zones(ZoneNames) ->
     FailFun = fun(ZoneName, Reason) ->
 		      Fmt = "Failed to reload ~s after DB failure:~n~p",
-		      ?DNSXD_ERR(Fmt, [ZoneName, Reason]),
+		      lager:error(Fmt, [ZoneName, Reason]),
 		      ok = dnsxd:delete_zone(ZoneName),
 		      gen_server:cast(?SERVER, {reload, ZoneName})
 	      end,
@@ -120,7 +120,7 @@ init([]) ->
     {ok, State}.
 
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
+    lager:notice("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast({reload, ZoneName}, #state{db_lost = false} = State) ->
@@ -134,7 +134,7 @@ handle_cast({reload, ZoneName}, #state{reload = List} = State) ->
     NewState = State#state{reload = List0},
     {noreply, NewState};
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
+    lager:notice("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info({Ref, done} = Message, #state{db_ref = Ref, db_seq = Seq,
@@ -142,27 +142,27 @@ handle_info({Ref, done} = Message, #state{db_ref = Ref, db_seq = Seq,
 					 } = State) ->
     case dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER, Seq) of
 	{ok, NewRef, Seq} ->
-	    if Lost -> ?DNSXD_INFO("Reconnected db poll");
+	    if Lost -> lager:alert("Reconnected db poll");
 	       true -> ok end,
 	    ok = spawn_zone_reloader(ReloadList),
 	    State0 = State#state{db_ref = NewRef, db_lost = false, reload = []},
 	    {noreply, State0};
 	{error, Error} ->
-	    ?DNSXD_ERR("Unable to reconnect db poll:~n"
-		       "~p~n"
-		       "Retrying in 30 seconds", [Error]),
+	    lager:alert("Unable to reconnect db poll:~n"
+			"~p~n"
+			"Retrying in 30 seconds", [Error]),
 	    {ok, _} = timer:send_after(30000, self(), Message),
 	    {noreply, State}
     end;
 handle_info({error, Ref, _Seq, Error},
 	    #state{db_ref = Ref, db_lost = false} = State) ->
-    ?DNSXD_ERR("Lost db connection:~n~p", [Error]),
+    lager:alert("Lost db connection:~n~p", [Error]),
     {ok, _} = timer:send_after(0, self(), {Ref, done}),
     NewState = State#state{db_lost = true},
     {noreply, NewState};
 handle_info({error, _Ref, _Seq, Error}, #state{db_lost = true} = State) ->
     Fmt = "Got db connection error when db connection already lost:~n~p",
-    ?DNSXD_ERR(Fmt, [Error]),
+    lager:error(Fmt, [Error]),
     {noreply, State};
 handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
     Name = proplists:get_value(<<"id">>, Props),
@@ -187,7 +187,7 @@ handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
 		  ok ->
 		      "Zone ~s loaded."
 	      end,
-    ?DNSXD_INFO(Message, [Name]),
+    lager:info(Message, [Name]),
     {noreply, NewState};
 handle_info(_Msg, State) -> {stop, stray_message, State}.
 

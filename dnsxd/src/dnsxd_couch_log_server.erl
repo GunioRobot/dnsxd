@@ -75,11 +75,11 @@ init([]) ->
     {ok, State}.
 
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
+    lager:notice("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
+    lager:notice("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info(flush_table, #state{} = State) ->
@@ -90,25 +90,25 @@ handle_info({Ref, done} = Message,
 	    #state{db_ref = Ref, db_seq = Seq, db_lost = Lost} = State) ->
     case dnsxd_couch_lib:setup_monitor(?CHANGES_FILTER, Seq) of
 	{ok, NewRef, Seq} ->
-	    if Lost -> ?DNSXD_INFO("Reconnected db poll");
+	    if Lost -> lager:alert("Reconnected db poll");
 	       true -> ok end,
 	    {noreply, State#state{db_ref = NewRef, db_lost = false}};
 	{error, Error} ->
-	    ?DNSXD_ERR("Unable to reconnect db poll:~n"
-		       "~p~n"
-		       "Retrying in 30 seconds", [Error]),
+	    lager:alert("Unable to reconnect db poll:~n"
+			"~p~n"
+			"Retrying in 30 seconds", [Error]),
 	    {ok, _} = timer:send_after(30000, self(), Message),
 	    {noreply, State}
     end;
 handle_info({error, Ref, _Seq, Error},
 	    #state{db_ref = Ref, db_lost = false} = State) ->
-    ?DNSXD_ERR("Lost db connection:~n~p", [Error]),
+    lager:alert("Lost db connection:~n~p", [Error]),
     {ok, _} = timer:send_after(0, self(), {Ref, done}),
     NewState = State#state{db_lost = true},
     {noreply, NewState};
 handle_info({error, _Ref, _Seq, Error}, #state{db_lost = true} = State) ->
     Fmt = "Got db connection error when db connection already lost:~n~p",
-    ?DNSXD_ERR(Fmt, [Error]),
+    lager:error(Fmt, [Error]),
     {noreply, State};
 handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
     NewSeq = proplists:get_value(<<"seq">>, Props),
@@ -116,19 +116,19 @@ handle_info({change, Ref, {Props}}, #state{db_ref = Ref} = State) ->
     case proplists:get_value(<<"id">>, Props) of
 	?DOC_NAME_CONFIG ->
 	    ok = update_conf(),
-	    ?DNSXD_INFO("Log configuration reloaded");
+	    lager:info("Log configuration reloaded");
 	<<?DOC_NAME_PREFIX_STR, _/binary>> = LogDocName ->
 	    case get_log(LogDocName) of
-		{ok, _} -> ?DNSXD_INFO("Resolved conflict in ~s");
+		{ok, _} -> lager:info("Resolved conflict in ~s");
 		{error, Reason} ->
 		    Fmt = "Failed to resolve conflict in ~s:~n~p",
 		    Args = [LogDocName, Reason],
-		    ?DNSXD_ERR(Fmt, Args)
+		    lager:error(Fmt, Args)
 	    end;
 	Other ->
 	    Fmt = "Not sure how to handle change in ~s detected by filter ~s",
 	    Args = [Other, ?CHANGES_FILTER],
-	    ?DNSXD_ERR(Fmt, Args)
+	    lager:notice(Fmt, Args)
     end,
     {noreply, NewState};
 handle_info(_Msg, #state{flush_ref = Ref} = State) ->
@@ -147,7 +147,7 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%% Internal functions
 %%%===================================================================
 
-log(_Props, 0) -> ?DNSXD_ERR("Log insert failed");
+log(_Props, 0) -> lager:critical("Log insert failed");
 log(Props, Retries) ->
     Time = proplists:get_value(<<"time">>, Props, dns:unix_time()),
     DocNo = doc_number(Time),
@@ -262,8 +262,8 @@ flush_to_couch() ->
     case flush_to_couch_getdb(5) of
 	{ok, DbRef} -> flush_to_couch(DbRef);
 	undefined ->
-	    ?DNSXD_ERR("Failed to save ~p log entries",
-		       [ets:info(?TAB_DUMP, size)]),
+	    lager:critical("Failed to save ~p log entries",
+			   [ets:info(?TAB_DUMP, size)]),
 	    true = ets:delete(?TAB_DUMP),
 	    ok
     end.
@@ -273,7 +273,7 @@ flush_to_couch_getdb(Retries) ->
     case dnsxd_couch_lib:get_db() of
 	{ok, _DbRef} = Result -> Result;
 	{error, Reason} ->
-	    ?DNSXD_ERR("Failed to get database:~n~p", [Reason]),
+	    lager:critical("Failed to get database:~n~p", [Reason]),
 	    timer:sleep(500),
 	    flush_to_couch_getdb(Retries - 1)
     end.
@@ -293,7 +293,7 @@ flush_to_couch(DbRef) ->
     end.
 
 flush_to_couch(_DbRef, _DocNo, Entries, 0) ->
-    ?DNSXD_ERR("Failed to save ~p log entries", [length(Entries)]);
+    lager:critical("Failed to save ~p log entries", [length(Entries)]);
 flush_to_couch(DbRef, DocNo, Entries, Retries) ->
     DocName = doc_name(DocNo),
     DocEpoch = doc_epoch(DocNo),
@@ -313,12 +313,12 @@ flush_to_couch(DbRef, DocNo, Entries, Retries) ->
 	    case couchbeam:save_doc(DbRef, NewDoc) of
 		{ok, _} -> ok;
 		{error, Reason} ->
-		    ?DNSXD_ERR("Failed to write ~s:~n~p", [DocName, Reason]),
+		    lager:warning("Failed to write ~s:~n~p", [DocName, Reason]),
 		    timer:sleep(500),
 		    flush_to_couch(DbRef, DocNo, Entries, Retries - 1)
 	    end;
 	{error, Reason} ->
-	    ?DNSXD_ERR("Failed to open ~s:~n~p", [DocName, Reason]),
+	    lager:warning("Failed to open ~s:~n~p", [DocName, Reason]),
 	    timer:sleep(500),
 	    flush_to_couch(DbRef, DocNo, Entries, Retries - 1)
     end.

@@ -31,7 +31,7 @@ init(#dnsxd_if_spec{protocol = udp, ip = DstIP, port = DstPort}) ->
 	    Ctx = dnsxd_op_ctx:new_udp(Socket, SrcIP, SrcPort, DstIP, DstPort),
 	    ok = dnsxd_op:dispatch(Ctx, MsgBin);
 	Other ->
-	    ?DNSXD_ERR("Stray message:~n~p~n", [Other])
+	    lager:notice("Stray message:~n~p~n", [Other])
     after 5000 ->
-	    ?DNSXD_ERR("Timed out waiting for datagram")
+	    lager:error("Timed out waiting for datagram")
     end.

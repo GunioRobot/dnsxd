@@ -329,11 +329,11 @@ handle_call({delete_zone, ZoneName}, _From, #state{} = State) ->
     Reply = do_delete_zone(ZoneName),
     {reply, Reply, State};
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
+    lager:notice("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
+    lager:notice("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info({clean_zone, #zone_ref{} = ZoneRef, Serials}, State) ->
@@ -360,7 +360,7 @@ handle_info({reload_zones_done, Pid}, #state{reload_pid = Pid} = State) ->
     NewState = set_reload_timer(State#state{reload_pid = undefined}),
     {noreply, NewState};
 handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
+    lager:notice("Stray message:~n~p~nState:~n~p~n", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, #state{reload_ref = Ref}) ->
@@ -454,7 +454,7 @@ insert_zone(#dnsxd_zone{name = ZoneName, soa_param = SOA, nsec3 = NSEC3Rec,
 		    ets:update_element(?TAB_BADZONE, ZoneName, Updates);
 	       true -> ets:insert(?TAB_BADZONE, #badzone{name = ZoneName})
 	    end,
-	    ?DNSXD_INFO("Failed to insert zone ~s:~n~p", [ZoneName, Reason]),
+	    lager:notice("Failed to insert zone ~s:~n~p", [ZoneName, Reason]),
 	    {error, bad_zone}
     end.
 

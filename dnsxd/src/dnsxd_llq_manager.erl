@@ -108,14 +108,14 @@ handle_call({new_llq, ClientPid, MsgCtx,
 	    end
     end;
 handle_call(Request, _From, State) ->
-    ?DNSXD_ERR("Stray call:~n~p~nState:~n~p~n", [Request, State]),
+    lager:notice("Stray call:~n~p~nState:~n~p~n", [Request, State]),
     {noreply, State}.
 
 handle_cast({zone_changed, ZoneName}, #state{serialchange_tab = Tab} = State) ->
     ok = update_serial_tracking(Tab, ZoneName),
     {noreply, State};
 handle_cast(Msg, State) ->
-    ?DNSXD_ERR("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
+    lager:notice("Stray cast:~n~p~nState:~n~p~n", [Msg, State]),
     {noreply, State}.
 
 handle_info({new_serial, ZoneName}, State) ->
@@ -132,7 +132,7 @@ handle_info({'DOWN', _Ref, process, Pid, _Reason},
 	       end,
     {noreply, NewState};
 handle_info(Info, State) ->
-    ?DNSXD_ERR("Stray message:~n~p~nState:~n~p~n", [Info, State]),
+    lager:notice("Stray message:~n~p~nState:~n~p~n", [Info, State]),
     {noreply, State}.
 
 terminate(_Reason, _State) -> ok.
