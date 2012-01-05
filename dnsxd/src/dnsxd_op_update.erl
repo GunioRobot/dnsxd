@@ -51,7 +51,9 @@ handle(MsgCtx, #dns_message{questions = [#dns_query{name = ZoneNameM,
 			false ->
 			    dnsxd:log(MsgCtx, LogPropsRC),
 			    dnsxd_op_ctx:reply(MsgCtx, ReqMsg, ReplyProps)
-		    end
+		    end;
+		timeout ->
+		    ?DNSXD_INFO("Update request for ~s timed out", [ZoneName])
 	    end;
 	_ ->
 	    dnsxd:log(MsgCtx, [{zone, ZoneName},
@@ -101,9 +103,11 @@ update(MsgCtx,
 	PreReqTuple = lists:map(PreReqFun, PreReqRR),
 	UpdateTuple = lists:map(UpdateFun, UpdateRR),
 	Datastore = dnsxd:datastore(),
-	RC = Datastore:dnsxd_dns_update(MsgCtx, Key, ZoneName, ZoneClass,
-					PreReqTuple, UpdateTuple),
-	{RC, LeaseLength}
+	case Datastore:dnsxd_dns_update(MsgCtx, Key, ZoneName, ZoneClass,
+					PreReqTuple, UpdateTuple) of
+	    timeout -> timeout;
+	    RC -> {RC, LeaseLength}
+	end
     catch throw:formerr ->
 	    {?DNS_RCODE_FORMERR, undefined}
     end.

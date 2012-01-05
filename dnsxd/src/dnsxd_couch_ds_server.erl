@@ -210,20 +210,30 @@ insert_zone(#dnsxd_couch_zone{enabled = true} = CouchZone) ->
     dnsxd:reload_zone(Zone);
 insert_zone(#dnsxd_couch_zone{enabled = false}) -> {error, disabled}.
 
-update_zone_int(0, _MsgCtx, _Key, _ZoneName, _PreReqs, _Updates) ->
-    ?DNS_RCODE_SERVFAIL;
 update_zone_int(Attempts, MsgCtx, Key, ZoneName, PreReqs, Updates) ->
+    LockId = {{?MODULE, ZoneName}, self()},
+    BeforeLock = now(),
+    true = global:set_lock(LockId, [node()]),
+    F = fun() ->
+		dnsxd_couch_zone:update(MsgCtx, Key, ZoneName, PreReqs, Updates)
+	end,
+    Result = case timer:now_diff(now(), BeforeLock) < 2000000 of
+		 true -> update_zone(F, Attempts);
+		 false -> timeout
+	     end,
+    true = global:del_lock(LockId),
+    Result.
+
+update_zone(_Fun, 0) -> ?DNS_RCODE_SERVFAIL;
+update_zone(Fun, Attempts) ->
     NewAttempts = Attempts - 1,
-    case dnsxd_couch_zone:update(MsgCtx, Key, ZoneName, PreReqs, Updates) of
+    case Fun() of
 	{ok, Rcode} -> Rcode;
 	{error, disabled} -> refused;
-	{error, conflict} ->
-	    update_zone_int(NewAttempts, MsgCtx, Key, ZoneName, PreReqs,
-			    Updates);
+	{error, conflict} -> update_zone(Fun, NewAttempts);
 	{error, _Error} ->
 	    %% todo: log the error
-	    update_zone_int(NewAttempts, MsgCtx, Key, ZoneName, PreReqs,
-			    Updates)
+	    update_zone(Fun, NewAttempts)
     end.
 
 init_load_zones() ->
